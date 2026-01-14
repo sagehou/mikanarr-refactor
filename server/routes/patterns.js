@@ -209,6 +209,30 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// 临时测试端点 - 清空数据库
+router.delete('/test-clear', (req, res) => {
+  try {
+    const countBefore = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+    console.log(`[patterns] Test clear: Records before: ${countBefore}`);
+    
+    db.exec('DELETE FROM patterns');
+    db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
+    
+    const countAfter = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+    console.log(`[patterns] Test clear: Records after: ${countAfter}`);
+    
+    res.json({
+      success: true,
+      message: 'Database cleared successfully',
+      countBefore,
+      countAfter
+    });
+  } catch (error) {
+    console.error('[patterns] Test clear error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 导出patterns数据
 router.get('/export', (req, res) => {
   try {
