@@ -24,7 +24,10 @@ export default function PatternList() {
   const loadPatterns = async () => {
     try {
       const response = await api.get('/patterns');
-      setPatterns(response.data);
+      const data = response.data;
+      setPatterns(Array.isArray(data) ? data : []);
+    } catch {
+      setPatterns([]);
     } finally {
       setLoading(false);
     }
@@ -37,9 +40,9 @@ export default function PatternList() {
     }
   };
 
-  const filteredPatterns = patterns.filter(
+  const filteredPatterns = (Array.isArray(patterns) ? patterns : []).filter(
     (p) =>
-      p.series.toLowerCase().includes(search.toLowerCase()) ||
+      p.series?.toLowerCase().includes(search.toLowerCase()) ||
       p.releasegroup?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -91,7 +94,7 @@ export default function PatternList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredPatterns.map((pattern) => (
+              {(Array.isArray(filteredPatterns) ? filteredPatterns : []).map((pattern) => (
                 <tr key={pattern.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {pattern.id}

@@ -86,7 +86,8 @@ const [series, setSeries] = useState<Series[]>([]);
   const loadSeries = async () => {
     try {
       const res = await api.get('/sonarr/api/v3/series');
-      setSeries(res.data);
+      const data = res.data;
+      setSeries(Array.isArray(data) ? data : []);
     } catch {
       setSeries([]);
     }
@@ -220,7 +221,7 @@ const [series, setSeries] = useState<Series[]>([]);
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               >
                 <option value="">Select series...</option>
-                {series.map((s) => (
+                {(Array.isArray(series) ? series : []).map((s) => (
                   <option key={s.title} value={s.title}>
                     {s.title}
                   </option>
@@ -237,7 +238,7 @@ const [series, setSeries] = useState<Series[]>([]);
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               >
                 <option value="">Select season...</option>
-                {seasonChoices.map((s) => (
+                {(Array.isArray(seasonChoices) ? seasonChoices : []).map((s) => (
                   <option key={s.id} value={s.id}>
                     Season {s.id}
                     {s.monitored ? '' : ' (unmonitored)'}
@@ -337,7 +338,7 @@ const [series, setSeries] = useState<Series[]>([]);
           <div className="bg-white rounded-xl shadow p-4 sticky top-4">
             <h3 className="font-medium text-gray-900 mb-3">RSS Preview</h3>
             <div className="space-y-1 max-h-[70vh] overflow-y-auto">
-              {matchedItems.map((item, i) => (
+              {(Array.isArray(matchedItems) ? matchedItems : []).map((item, i) => (
                 <div
                   key={i}
                   onClick={() => handleSelectTitle(item.title)}
