@@ -24,9 +24,11 @@ export default function PatternEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
-const [series, setSeries] = useState<Series[]>([]);
+  const [series, setSeries] = useState<Series[]>([]);
   const [rssItems, setRssItems] = useState<string[]>([]);
   const [proxyUrl, setProxyUrl] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
 
   const {
     register,
@@ -65,8 +67,11 @@ const [series, setSeries] = useState<Series[]>([]);
           (el) => el.textContent || ''
         );
         setRssItems(items.slice(0, 50));
-      } catch {
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch RSS:', err);
         setRssItems([]);
+        setError('Failed to load RSS preview. Make sure you are logged in and the URL is accessible.');
       }
     }, 1000);
 
@@ -88,8 +93,11 @@ const [series, setSeries] = useState<Series[]>([]);
       const res = await api.get('/sonarr/api/v3/series');
       const data = res.data;
       setSeries(Array.isArray(data) ? data : []);
-    } catch {
+      setSeriesError(null);
+    } catch (err) {
+      console.error('Failed to load series from Sonarr:', err);
       setSeries([]);
+      setSeriesError('Failed to load series from Sonarr. Please configure SONARR_API_KEY and SONARR_HOST.');
     }
   };
 
@@ -178,6 +186,9 @@ const [series, setSeries] = useState<Series[]>([]);
               placeholder="https://mikanani.me/RSS/MyBangumi?token=xxx"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
+            {error && (
+              <p className="text-red-500 text-sm mt-1">{error}</p>
+            )}
           </div>
 
           <div>
@@ -227,6 +238,9 @@ const [series, setSeries] = useState<Series[]>([]);
                   </option>
                 ))}
               </select>
+              {seriesError && (
+                <p className="text-yellow-600 text-sm mt-1">{seriesError}</p>
+              )}
             </div>
 
             <div>
