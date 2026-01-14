@@ -152,6 +152,7 @@ const [series, setSeries] = useState<Series[]>([]);
   }, [pattern, rssItems]);
 
   const seasonChoices = useMemo(() => {
+    if (!Array.isArray(series)) return [];
     const selected = series.find((s) => s.title === watch('series'));
     return selected?.seasons?.map((s) => ({
       id: `${s.seasonNumber}`.padStart(2, '0'),
