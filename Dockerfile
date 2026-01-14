@@ -39,7 +39,7 @@ COPY --from=builder /app/package.json .
 RUN mkdir -p data
 
 # Create startup script
-RUN echo '#!/bin/sh\nnode server/index.js' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\nnode server/index.js' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 12306
 VOLUME /data
