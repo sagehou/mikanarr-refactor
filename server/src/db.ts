@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/database.sqlite');
 
-const db = new Database(dbPath);
+const db: Database.Database = new Database(dbPath);
 
 export function initDb() {
   db.exec(`
@@ -51,7 +51,7 @@ export function createPattern(pattern: Pattern) {
     VALUES (@remote, @pattern, @series, @season, @language, @quality, @offset, @releasegroup)
   `);
   const result = stmt.run(pattern);
-  return getPattern(result.lastInsertRowid);
+  return getPattern(Number(result.lastInsertRowid));
 }
 
 export function updatePattern(id: number, pattern: Pattern) {

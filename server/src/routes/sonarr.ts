@@ -8,8 +8,8 @@ const SONARR_HOST = process.env.SONARR_HOST;
 
 router.use(verifyToken);
 
-router.all('/*', async (req, res) => {
-  const path = req.params[0] || '';
+router.all('/*', async (req: express.Request, res: express.Response) => {
+  const path: string = req.params[0] || '';
   try {
     const response = await axios({
       method: req.method,

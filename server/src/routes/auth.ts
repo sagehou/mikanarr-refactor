@@ -1,3 +1,4 @@
+import { Request, Response, NextFunction } from 'express';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
@@ -20,7 +21,7 @@ router.post('/login', (req, res) => {
   }
 });
 
-export function verifyToken(req, res, next) {
+export function verifyToken(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send('No token provided');
   

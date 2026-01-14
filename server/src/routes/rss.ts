@@ -15,7 +15,7 @@ interface PatternData {
   releasegroup?: string;
 }
 
-function transformTitle(title: string, { pattern, series, season, language, quality, offset, releasegroup }: PatternData) {
+function transformTitle(title: string, { pattern, series, season = '01', language = '', quality = '', offset = 0, releasegroup = '' }: PatternData) {
   try {
     const regex = new RegExp(`^${pattern}$`);
     const match = title.match(regex);
@@ -49,7 +49,7 @@ router.get('/*', async (req, res) => {
       const link = item.link?.[0];
       const guid = item.guid?.[0];
       
-      for (const pattern of patterns) {
+      for (const pattern of patterns as PatternData[]) {
         const newTitle = transformTitle(title, pattern);
         if (newTitle) {
           items.push({
