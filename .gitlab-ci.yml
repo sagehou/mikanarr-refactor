@@ -1,0 +1,77 @@
+variables:
+  REPO_NAME: gitlab.tyo-arm.755022.xyz/sage/mikanarr-refactor
+  CONTAINER_TEST_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  CONTAINER_RELEASE_IMAGE: "$CI_REGISTRY_IMAGE:latest"
+  DOCKER_TLS_CERTDIR: ''
+stages:
+- publish
+- deploy
+
+.publish:
+  variables:
+    KANIKO_ARGS: ''
+  stage: publish
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint:
+    - ''
+  script:
+  - |
+    if [ "$CI_COMMIT_REF_NAME" = $CI_DEFAULT_BRANCH ]; then
+      VERSION="latest"
+    elif [ -n "$CI_COMMIT_TAG" ];then
+      NOSLASH=$(echo "$CI_COMMIT_TAG" | tr -s / - )
+      SANITIZED="${NOSLASH//[^a-zA-Z0-9\-\.]/}"
+      VERSION="$SANITIZED"
+    else \
+      NOSLASH=$(echo "$CI_COMMIT_REF_NAME" | tr -s / - )
+      SANITIZED="${NOSLASH//[^a-zA-Z0-9\-]/}"
+      VERSION="branch-$SANITIZED"
+    fi
+  - echo $VERSION
+  - BUILD_TIME=`date +%Y%m%d_%H%M`
+  - mkdir -p /kaniko/.docker
+  - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}"
+    "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  - '/kaniko/executor $KANIKO_ARGS --context "${CI_PROJECT_DIR}" --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+    --destination "${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}" --destination "${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"'
+
+publish-arm:
+  extends: .publish
+  stage: publish
+  tags:
+    - k8s
+    - arm
+  only:
+    refs:
+      - master
+  variables:
+    REGISTRY_IMAGE_NAME: "${CI_REGISTRY_IMAGE}"
+    TAG_PERFIX: "arm64"
+
+deploy:
+  stage: deploy
+  tags:
+    - k8s
+    - arm
+  only:
+    refs:
+      - master
+  needs:
+    - publish-arm
+  before_script:
+    - which ssh-agent || apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-add ~/.ssh/id_rsa
+    - ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - echo "deploy stage."
+    - ls -la
+    - echo "重新应用docker compose中"
+    - ssh -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP
+      "cd ${APP_PATH} && docker compose pull && docker compose up -d"
