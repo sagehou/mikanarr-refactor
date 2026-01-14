@@ -99,7 +99,15 @@ class MikanarrApp {
       }
       
       const series = await response.json();
-      console.log('[loadSeries] Loaded', series?.length || 0, 'series');
+      console.log('[loadSeries] Response type:', typeof series);
+      console.log('[loadSeries] Is array:', Array.isArray(series));
+      console.log('[loadSeries] Full response:', series);
+      
+      if (!Array.isArray(series)) {
+        throw new Error(`Invalid response type: expected array, got ${typeof series}`);
+      }
+      
+      console.log('[loadSeries] Loaded', series.length, 'series');
       
       this.seriesList = series;
       this.renderSeriesOptions(series);
