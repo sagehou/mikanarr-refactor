@@ -97,7 +97,7 @@ setupEventListeners() {
   }
 
   // 当前排序状态
-  currentSort = { field: 'created_at', direction: 'desc' };
+  currentSort = { field: 'id', direction: 'desc' };
 
   async loadSeries() {
     try {
