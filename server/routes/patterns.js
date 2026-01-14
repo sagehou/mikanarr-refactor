@@ -75,10 +75,16 @@ router.post('/import', verifyToken, async (req, res) => {
     let actionMessage = '';
     
     if (mode === 'overwrite') {
-      // 覆盖模式：先删除所有现有patterns
+      // 覆盖模式：先删除所有现有patterns，并重置自增ID
       try {
-        db.exec('DELETE FROM patterns');
-        console.log('[patterns] Cleared all existing patterns');
+        // 使用事务确保数据一致性
+        db.transaction(() => {
+          // 删除所有数据
+          db.exec('DELETE FROM patterns');
+          // 重置自增ID
+          db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
+        });
+        console.log('[patterns] Cleared all existing patterns and reset auto-increment');
         actionMessage = 'All existing patterns have been cleared and ';
       } catch (error) {
         console.error('[patterns] Error clearing patterns:', error);
@@ -98,11 +104,19 @@ router.post('/import', verifyToken, async (req, res) => {
       }
     }
     
+    // 验证结果：检查数据库中的实际记录数
+    let finalCount = 0;
+    try {
+      finalCount = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+    } catch (error) {
+      console.error('[patterns] Error counting patterns:', error);
+    }
+    
     let finalMessage = '';
     if (mode === 'overwrite') {
-      finalMessage = `${actionMessage}${successCount} patterns imported, ${errorCount} errors. Patterns have been re-indexed starting from ID 1.`;
+      finalMessage = `${actionMessage}${successCount} patterns imported, ${errorCount} errors. Patterns have been re-indexed starting from ID 1. Total patterns in database: ${finalCount}`;
     } else {
-      finalMessage = `${successCount} patterns imported, ${errorCount} errors. Data has been appended to existing patterns.`;
+      finalMessage = `${successCount} patterns imported, ${errorCount} errors. Data has been appended to existing patterns. Total patterns in database: ${finalCount}`;
     }
     
     res.json({
@@ -111,6 +125,7 @@ router.post('/import', verifyToken, async (req, res) => {
       errorCount,
       errors,
       mode,
+      finalCount,
       message: finalMessage
     });
   } catch (error) {
