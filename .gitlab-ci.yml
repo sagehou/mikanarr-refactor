@@ -66,6 +66,7 @@ deploy:
     - chmod 700 ~/.ssh
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
     - chmod 600 ~/.ssh/id_rsa
+    - dos2unix ~/.ssh/id_rsa
     - ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts 2>/dev/null || true
     - chmod 644 ~/.ssh/known_hosts 2>/dev/null || true
   script:
