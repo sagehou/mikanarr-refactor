@@ -74,5 +74,5 @@ deploy:
     - echo "deploy stage."
     - ls -la
     - echo "重新应用docker compose中"
-    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP
-      "cd ${APP_PATH} && docker compose pull && docker compose up -d"
+    - echo "IMAGE_NAME=${CI_REGISTRY_IMAGE}:arm64-latest"
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP "cd ${APP_PATH} && IMAGE_NAME=${CI_REGISTRY_IMAGE}:arm64-latest docker compose pull && IMAGE_NAME=${CI_REGISTRY_IMAGE}:arm64-latest docker compose up -d --force-recreate"
