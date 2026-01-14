@@ -43,6 +43,8 @@ setupEventListeners() {
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
     document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
+    document.getElementById('sort-by').addEventListener('change', () => this.loadPatterns());
+    document.getElementById('sort-order').addEventListener('change', () => this.loadPatterns());
   }
 
   async handleLogin(e) {
@@ -81,7 +83,9 @@ setupEventListeners() {
 
   async loadPatterns() {
     try {
-      const response = await this.apiRequest('/api/patterns');
+      const sortBy = document.getElementById('sort-by').value;
+      const sortOrder = document.getElementById('sort-order').value;
+      const response = await this.apiRequest(`/api/patterns?sortBy=${sortBy}&order=${sortOrder}`);
       const patterns = await response.json();
       this.renderPatterns(patterns);
     } catch (error) {

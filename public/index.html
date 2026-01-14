@@ -61,7 +61,21 @@
         <div id="pattern-list" class="pattern-list">
 <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Patterns</h2>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-center">
+              <div class="d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm" id="sort-by" style="width: auto;">
+                  <option value="created_at">创建时间</option>
+                  <option value="id">ID</option>
+                  <option value="series">系列</option>
+                  <option value="season">季度</option>
+                  <option value="language">语言</option>
+                  <option value="quality">质量</option>
+                </select>
+                <select class="form-select form-select-sm" id="sort-order" style="width: auto;">
+                  <option value="desc">降序</option>
+                  <option value="asc">升序</option>
+                </select>
+              </div>
               <button class="btn btn-outline-secondary" id="export-btn">
                 <i class="bi bi-download"></i> 导出
               </button>

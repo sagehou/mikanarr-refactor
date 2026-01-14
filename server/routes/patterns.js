@@ -248,7 +248,46 @@ router.use((err, req, res, next) => {
 });
 
 router.get('/', (req, res) => {
-  res.json(getPatterns());
+  const { sortBy = 'created_at', order = 'desc' } = req.query;
+  
+  let query = 'SELECT * FROM patterns';
+  let orderBy = 'created_at';
+  
+  // 处理排序字段
+  switch (sortBy.toLowerCase()) {
+    case 'id':
+      orderBy = 'id';
+      break;
+    case 'series':
+      orderBy = 'series';
+      break;
+    case 'season':
+      orderBy = 'season';
+      break;
+    case 'language':
+      orderBy = 'language';
+      break;
+    case 'quality':
+      orderBy = 'quality';
+      break;
+    case 'created_at':
+      orderBy = 'created_at';
+      break;
+    default:
+      orderBy = 'created_at';
+  }
+  
+  // 处理排序方向
+  const direction = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  query += ` ORDER BY ${orderBy} ${direction}`;
+  
+  try {
+    const patterns = db.prepare(query).all();
+    res.json(patterns);
+  } catch (error) {
+    console.error('[patterns] Error fetching sorted patterns:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
 });
 
 router.post('/', (req, res) => {
