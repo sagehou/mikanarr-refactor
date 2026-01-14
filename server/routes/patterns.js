@@ -77,9 +77,39 @@ router.post('/import', verifyToken, async (req, res) => {
     if (mode === 'overwrite') {
       // 覆盖模式：先删除所有现有patterns，并重置自增ID
       try {
+        // 先检查当前记录数
+        const countBefore = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+        console.log(`[patterns] Records before delete: ${countBefore}`);
+        
         // 直接执行删除操作，better-sqlite3的exec本身就是原子的
-        db.exec('DELETE FROM patterns');
-        console.log('[patterns] Cleared all existing patterns');
+        const deleteResult = db.exec('DELETE FROM patterns');
+        console.log('[patterns] Delete operation executed, result:', deleteResult);
+        
+        // 验证删除是否成功
+        const countAfterDelete = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+        console.log(`[patterns] Records after delete: ${countAfterDelete}`);
+        
+        if (countAfterDelete > 0) {
+          // 如果删除失败，尝试使用不同的方法
+          console.log('[patterns] Attempting alternative delete method...');
+          try {
+            const stmt = db.prepare('DELETE FROM patterns');
+            const result = stmt.run();
+            console.log('[patterns] Prepared statement delete result:', result);
+            
+            const countAfterStmt = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+            console.log(`[patterns] Records after prepared statement: ${countAfterStmt}`);
+            
+            if (countAfterStmt > 0) {
+              throw new Error(`Failed to delete records. Still have ${countAfterStmt} records after multiple attempts`);
+            }
+          } catch (altError) {
+            console.error('[patterns] Alternative delete method also failed:', altError);
+            throw altError;
+          }
+        }
+        
+        console.log('[patterns] Successfully cleared all existing patterns');
         
         // 重置自增ID
         try {
