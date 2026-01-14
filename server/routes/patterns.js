@@ -111,59 +111,70 @@ router.post('/import', verifyToken, async (req, res) => {
         
         console.log('[patterns] Successfully cleared all existing patterns');
         
-        // 重置自增ID - 使用多种方法确保成功
+        // 重置自增ID - 使用最直接有效的方法
         try {
-          // 方法1: 删除sqlite_sequence记录
-          try {
-            db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
-            console.log('[patterns] Method 1: Deleted from sqlite_sequence');
-          } catch (seqError) {
-            console.log('[patterns] Method 1 failed:', seqError.message);
+          console.log('[patterns] Starting ID reset process...');
+          
+          // 方法1: 删除并重建表（最可靠的方法）
+          console.log('[patterns] Method 1: Drop and recreate table');
+          
+          // 获取现有数据
+          const existingData = db.prepare('SELECT * FROM patterns').all();
+          console.log('[patterns] Backup', existingData.length, 'records');
+          
+          // 删除表
+          db.exec('DROP TABLE patterns');
+          console.log('[patterns] Dropped patterns table');
+          
+          // 重新创建表
+          db.exec(`
+            CREATE TABLE patterns (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              remote TEXT,
+              pattern TEXT NOT NULL,
+              series TEXT NOT NULL,
+              season TEXT NOT NULL,
+              language TEXT DEFAULT 'Chinese',
+              quality TEXT DEFAULT 'WEBDL 1080p',
+              offset INTEGER DEFAULT 0,
+              releasegroup TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `);
+          console.log('[patterns] Recreated patterns table');
+          
+          // 验证表是否为空
+          const countAfterRecreate = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+          console.log('[patterns] Records after table recreation:', countAfterRecreate);
+          
+          if (countAfterRecreate !== 0) {
+            throw new Error(`Table recreation failed. Still have ${countAfterRecreate} records`);
           }
           
-          // 方法2: 直接设置自增ID为0
-          try {
-            db.exec('UPDATE sqlite_sequence SET seq = 0 WHERE name = "patterns"');
-            console.log('[patterns] Method 2: Updated sqlite_sequence seq to 0');
-          } catch (seqError2) {
-            console.log('[patterns] Method 2 failed:', seqError2.message);
-          }
-          
-          // 方法3: 使用VACUUM重置整个数据库（最后手段）
-          try {
-            // 检查当前ID
-            const currentSeq = db.prepare('SELECT seq FROM sqlite_sequence WHERE name = "patterns"').get();
-            console.log('[patterns] Current seq value:', currentSeq);
-            
-            if (!currentSeq || currentSeq.seq > 0) {
-              // 手动插入再删除来重置ID
-              db.exec('INSERT INTO patterns (pattern, series, season) VALUES ("temp", "temp", "temp")');
-              const lastId = db.prepare('SELECT last_insert_rowid() as id').get().id;
-              console.log('[patterns] Inserted temp record with ID:', lastId);
-              
-              db.exec('DELETE FROM patterns WHERE pattern = "temp"');
-              console.log('[patterns] Deleted temp record');
-            }
-          } catch (manualError) {
-            console.log('[patterns] Method 3 (manual) failed:', manualError.message);
-          }
-          
-          // 验证ID是否重置
-          try {
-            const newRecord = db.prepare('INSERT INTO patterns (pattern, series, season) VALUES ("test", "test", "test")').run();
-            const testId = newRecord.lastInsertRowid;
-            db.exec('DELETE FROM patterns WHERE pattern = "test"');
-            console.log('[patterns] ID reset verification - new ID starts from:', testId);
-            
-            if (testId !== 1) {
-              console.warn('[patterns] WARNING: ID did not reset to 1, starts from:', testId);
-            }
-          } catch (verifyError) {
-            console.error('[patterns] ID reset verification failed:', verifyError);
-          }
+          console.log('[patterns] Successfully reset auto-increment ID by recreating table');
           
         } catch (error) {
-          console.error('[patterns] All ID reset methods failed:', error);
+          console.error('[patterns] Table recreation failed:', error);
+          
+          // 备用方法: 手动设置下一个ID
+          try {
+            console.log('[patterns] Attempting fallback method: manual ID reset');
+            
+            // 获取当前最大ID
+            const result = db.prepare('SELECT MAX(id) as max_id FROM patterns').get();
+            const currentMaxId = result.max_id || 0;
+            console.log('[patterns] Current max ID:', currentMaxId);
+            
+            // 如果表存在且有数据，手动重置
+            if (currentMaxId > 0) {
+              // 这个方法在某些SQLite版本中可能不工作，但值得一试
+              db.exec(`UPDATE sqlite_sequence SET seq = 0 WHERE name = 'patterns'`);
+              console.log('[patterns] Attempted to set seq = 0 in sqlite_sequence');
+            }
+            
+          } catch (fallbackError) {
+            console.error('[patterns] Fallback method also failed:', fallbackError);
+          }
         }
         
         actionMessage = 'All existing patterns have been cleared and ';
