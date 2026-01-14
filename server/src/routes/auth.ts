@@ -21,14 +21,18 @@ router.post('/login', (req, res) => {
   }
 });
 
-export function verifyToken(req: Request, res: Response, next: NextFunction) {
+interface AuthRequest extends Request {
+  user?: { username: string };
+}
+
+export function verifyToken(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send('No token provided');
   
   const token = authHeader.split(' ')[1];
   jwt.verify(token, pubKey, { algorithms: ['RS512'] }, (err, decoded) => {
     if (err) return res.status(401).send('Invalid token');
-    req.user = decoded;
+    req.user = decoded as { username: string };
     next();
   });
 }

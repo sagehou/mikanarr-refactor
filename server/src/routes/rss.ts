@@ -21,7 +21,7 @@ function transformTitle(title: string, { pattern, series, season = '01', languag
     const match = title.match(regex);
     if (!match?.groups?.episode) return null;
     
-    const episodeWithOffset = Number.parseInt(match.groups.episode) + (Number.parseInt(offset) || 0);
+    const episodeWithOffset = Number.parseInt(match.groups.episode) + (offset || 0);
     const seasonNum = season.padStart(2, '0');
     const episodeNum = `${episodeWithOffset}`.padStart(2, '0');
     
