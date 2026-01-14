@@ -62,7 +62,7 @@ deploy:
     - publish-arm
   before_script:
     - apk add --no-cache openssh-client
-    - which ssh-agent || eval $(ssh-agent -s)
+    - eval $(ssh-agent -s) || true
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
