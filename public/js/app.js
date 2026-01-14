@@ -656,73 +656,102 @@ setupEventListeners() {
 
   showImportModeDialog() {
     return new Promise((resolve) => {
+      // 创建遮罩层
       const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
+      overlay.id = 'import-modal-overlay';
       overlay.style.cssText = `
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.6);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 1000;
+        z-index: 9999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       `;
       
+      // 创建对话框
       const modal = document.createElement('div');
-      modal.className = 'modal';
+      modal.id = 'import-modal';
       modal.style.cssText = `
         background: white;
         padding: 2rem;
         border-radius: 0.5rem;
         max-width: 500px;
         width: 90%;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        border: 1px solid #dee2e6;
       `;
       
       modal.innerHTML = `
-        <h3 class="mb-3">选择导入模式</h3>
-        <p class="mb-4">请选择如何导入patterns数据：</p>
-        <div class="d-flex flex-column gap-2">
-          <button class="btn btn-primary" onclick="confirmImport('append')">
-            <i class="bi bi-plus-circle"></i> 追加模式
-            <small class="d-block text-muted mt-1">将新数据添加到现有patterns之后，保留原有ID</small>
+        <div style="margin-bottom: 1.5rem;">
+          <h3 style="margin: 0 0 0.5rem 0; color: #495057; font-weight: 600;">选择导入模式</h3>
+          <p style="margin: 0; color: #6c757d;">请选择如何导入patterns数据：</p>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
+          <button id="append-btn" class="btn btn-primary" style="width: 100%; text-align: left; padding: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <strong>追加模式</strong>
+            </div>
+            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
+              将新数据添加到现有patterns之后，保留原有ID
+            </small>
           </button>
-          <button class="btn btn-warning" onclick="confirmImport('overwrite')">
-            <i class="bi bi-arrow-clockwise"></i> 覆盖模式
-            <small class="d-block text-muted mt-1">删除所有现有数据，重新导入并重置ID从1开始</small>
+          
+          <button id="overwrite-btn" class="btn btn-warning" style="width: 100%; text-align: left; padding: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <strong>覆盖模式</strong>
+            </div>
+            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
+              删除所有现有数据，重新导入并重置ID从1开始
+            </small>
           </button>
         </div>
-        <div class="mt-3 text-end">
-          <button class="btn btn-secondary" onclick="cancelImport()">取消</button>
+        
+        <div style="text-align: right;">
+          <button id="cancel-btn" class="btn btn-secondary">取消</button>
         </div>
       `;
       
       overlay.appendChild(modal);
       document.body.appendChild(overlay);
       
-      // 全局函数供按钮调用
-      window.confirmImport = (mode) => {
+      // 获取按钮元素
+      const appendBtn = document.getElementById('append-btn');
+      const overwriteBtn = document.getElementById('overwrite-btn');
+      const cancelBtn = document.getElementById('cancel-btn');
+      
+      // 添加事件监听器
+      const handleConfirm = (mode) => {
         document.body.removeChild(overlay);
-        delete window.confirmImport;
-        delete window.cancelImport;
         resolve(mode);
       };
       
-      window.cancelImport = () => {
+      const handleCancel = () => {
         document.body.removeChild(overlay);
-        delete window.confirmImport;
-        delete window.cancelImport;
         resolve(null);
       };
+      
+      appendBtn.addEventListener('click', () => handleConfirm('append'));
+      overwriteBtn.addEventListener('click', () => handleConfirm('overwrite'));
+      cancelBtn.addEventListener('click', handleCancel);
       
       // 点击背景关闭
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-          window.cancelImport();
+          handleCancel();
         }
+      });
+      
+      // 防止点击对话框内部关闭
+      modal.addEventListener('click', (e) => {
+        e.stopPropagation();
       });
     });
   }
