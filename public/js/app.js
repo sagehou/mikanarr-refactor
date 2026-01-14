@@ -89,16 +89,22 @@ class MikanarrApp {
 
   async loadSeries() {
     try {
+      console.log('[loadSeries] Fetching series from Sonarr...');
       const response = await this.apiRequest('/sonarr/api/v3/series');
+      console.log('[loadSeries] Response status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
+      
       const series = await response.json();
+      console.log('[loadSeries] Loaded', series?.length || 0, 'series');
+      
       this.seriesList = series;
       this.renderSeriesOptions(series);
     } catch (error) {
-      console.error('Failed to load series:', error);
+      console.error('[loadSeries] Failed to load series:', error);
       const errorMsg = error.message || 'Unknown error';
       
       // Show error message to user
@@ -127,12 +133,22 @@ class MikanarrApp {
   renderSeriesOptions(series) {
     const select = document.getElementById('series');
     select.innerHTML = '<option value="">选择系列...</option>';
+    
+    if (!series || series.length === 0) {
+      console.warn('[renderSeriesOptions] No series to render');
+      return;
+    }
+    
+    console.log('[renderSeriesOptions] Rendering', series.length, 'series');
+    
     series.forEach(s => {
       const option = document.createElement('option');
       option.value = s.title;
       option.textContent = s.title;
       select.appendChild(option);
     });
+    
+    console.log('[renderSeriesOptions] Series options added to select element');
   }
 
   async loadSeasons() {
@@ -143,8 +159,18 @@ class MikanarrApp {
     if (!seriesTitle) return;
 
     const series = this.seriesList.find(s => s.title === seriesTitle);
-    if (!series?.seasons) return;
+    if (!series) {
+      console.warn('[loadSeasons] Series not found in list:', seriesTitle);
+      return;
+    }
+    
+    if (!series.seasons) {
+      console.warn('[loadSeasons] Series has no seasons:', seriesTitle);
+      return;
+    }
 
+    console.log('[loadSeasons] Loading seasons for:', seriesTitle, series.seasons.length, 'seasons');
+    
     series.seasons.forEach(season => {
       const option = document.createElement('option');
       option.value = String(season.seasonNumber).padStart(2, '0');
@@ -259,6 +285,7 @@ class MikanarrApp {
     form.reset();
 
     if (pattern) {
+      console.log('[showPatternEdit] Editing pattern:', pattern.series);
       document.getElementById('edit-title').textContent = '编辑 Pattern';
       document.getElementById('pattern-id').value = pattern.id;
       document.getElementById('remote').value = pattern.remote || '';
@@ -270,9 +297,11 @@ class MikanarrApp {
       document.getElementById('offset').value = pattern.offset || 0;
       document.getElementById('releasegroup').value = pattern.releasegroup || '';
       
+      // Load seasons after setting series value
       this.loadSeasons();
       this.updateProxyUrl();
     } else {
+      console.log('[showPatternEdit] Creating new pattern');
       document.getElementById('edit-title').textContent = '新建 Pattern';
       document.getElementById('pattern-id').value = '';
       document.getElementById('language').value = 'Chinese';
