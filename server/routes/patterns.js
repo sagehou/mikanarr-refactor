@@ -77,14 +77,18 @@ router.post('/import', verifyToken, async (req, res) => {
     if (mode === 'overwrite') {
       // 覆盖模式：先删除所有现有patterns，并重置自增ID
       try {
-        // 使用事务确保数据一致性
-        db.transaction(() => {
-          // 删除所有数据
-          db.exec('DELETE FROM patterns');
-          // 重置自增ID
+        // 直接执行删除操作，better-sqlite3的exec本身就是原子的
+        db.exec('DELETE FROM patterns');
+        console.log('[patterns] Cleared all existing patterns');
+        
+        // 重置自增ID
+        try {
           db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
-        });
-        console.log('[patterns] Cleared all existing patterns and reset auto-increment');
+          console.log('[patterns] Reset auto-increment counter');
+        } catch (seqError) {
+          console.log('[patterns] Note: sqlite_sequence not found or already empty');
+        }
+        
         actionMessage = 'All existing patterns have been cleared and ';
       } catch (error) {
         console.error('[patterns] Error clearing patterns:', error);
@@ -107,7 +111,19 @@ router.post('/import', verifyToken, async (req, res) => {
     // 验证结果：检查数据库中的实际记录数
     let finalCount = 0;
     try {
+      // 在删除后立即检查记录数
+      if (mode === 'overwrite') {
+        const afterDeleteCount = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+        console.log(`[patterns] Records after delete operation: ${afterDeleteCount}`);
+        
+        if (afterDeleteCount > 0) {
+          console.warn('[patterns] WARNING: Delete operation did not clear all records!');
+          errors.push('Warning: Delete operation did not clear all records');
+        }
+      }
+      
       finalCount = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+      console.log(`[patterns] Final record count: ${finalCount}`);
     } catch (error) {
       console.error('[patterns] Error counting patterns:', error);
     }
