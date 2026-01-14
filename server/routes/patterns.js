@@ -1,5 +1,5 @@
 const express = require('express');
-const { getPatterns, createPattern, updatePattern, deletePattern } = require('../database');
+const { getPatterns, getPattern, createPattern, updatePattern, deletePattern } = require('../database');
 const { verifyToken } = require('./auth');
 
 const router = express.Router();
