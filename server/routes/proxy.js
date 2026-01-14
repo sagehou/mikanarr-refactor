@@ -29,14 +29,15 @@ router.get('/', async (req, res) => {
     
     // 为每个item添加pubDate元素（如果不存在）
     if (xmlData.includes('<item>')) {
+      // 更好的正则表达式来处理XML item
       const updatedXml = xmlData.replace(
-        /(<item>[\s\S]*?)(?=<\/item>|$)/g,
+        /<item>([\s\S]*?)<\/item>/g,
         (match, itemContent) => {
           // 检查是否已经有pubDate
-          if (!itemContent.includes('<pubDate>')) {
+          if (!itemContent.includes('<pubDate')) {
             // 如果没有pubDate，添加当前时间
-            const now = new Date().toUTCString();
-            return itemContent.replace(/(<item>)/, `$1<pubDate>${now}</pubDate>`);
+            const now = new Date().toISOString();
+            return `<item>${itemContent}<pubDate>${now}</pubDate></item>`;
           }
           return match;
         }
