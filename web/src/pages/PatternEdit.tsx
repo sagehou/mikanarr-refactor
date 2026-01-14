@@ -1,7 +1,7 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Save, Copy, RefreshCw, ExternalLink } from 'lucide-react';
+import { Save, Copy } from 'lucide-react';
 import api from '../lib/api';
 
 interface PatternForm {
@@ -24,9 +24,8 @@ export default function PatternEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
-  const [series, setSeries] = useState<Series[]>([]);
+const [series, setSeries] = useState<Series[]>([]);
   const [rssItems, setRssItems] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const [proxyUrl, setProxyUrl] = useState('');
 
   const {

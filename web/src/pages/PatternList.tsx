@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Edit, Trash2, RefreshCw } from 'lucide-react';
+import { Edit, Trash2 } from 'lucide-react';
 import api from '../lib/api';
 
 interface Pattern {
