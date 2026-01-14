@@ -1,14 +1,12 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/database.sqlite');
+const dbPath = path.join(__dirname, '../data/database.sqlite');
 
-const db: Database.Database = new Database(dbPath);
+const db = new Database(dbPath);
 
-export function initDb() {
+function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS patterns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,36 +23,24 @@ export function initDb() {
   `);
 }
 
-export function getPatterns() {
+function getPatterns() {
   return db.prepare('SELECT * FROM patterns ORDER BY created_at DESC').all();
 }
 
-export function getPattern(id: number) {
+function getPattern(id) {
   return db.prepare('SELECT * FROM patterns WHERE id = ?').get(id);
 }
 
-interface Pattern {
-  id?: number;
-  remote?: string;
-  pattern: string;
-  series: string;
-  season: string;
-  language?: string;
-  quality?: string;
-  offset?: number;
-  releasegroup?: string;
-}
-
-export function createPattern(pattern: Pattern) {
+function createPattern(pattern) {
   const stmt = db.prepare(`
     INSERT INTO patterns (remote, pattern, series, season, language, quality, offset, releasegroup)
     VALUES (@remote, @pattern, @series, @season, @language, @quality, @offset, @releasegroup)
   `);
   const result = stmt.run(pattern);
-  return getPattern(Number(result.lastInsertRowid));
+  return getPattern(result.lastInsertRowid);
 }
 
-export function updatePattern(id: number, pattern: Pattern) {
+function updatePattern(id, pattern) {
   const stmt = db.prepare(`
     UPDATE patterns SET
       remote = @remote,
@@ -71,9 +57,17 @@ export function updatePattern(id: number, pattern: Pattern) {
   return getPattern(id);
 }
 
-export function deletePattern(id: number) {
+function deletePattern(id) {
   const stmt = db.prepare('DELETE FROM patterns WHERE id = ?');
   return stmt.run(id);
 }
 
-export default db;
+module.exports = {
+  initDb,
+  getPatterns,
+  getPattern,
+  createPattern,
+  updatePattern,
+  deletePattern,
+  db
+};

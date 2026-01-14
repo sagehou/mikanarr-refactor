@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  mikanarr:
+    build: .
+    container_name: mikanarr
+    restart: unless-stopped
+    ports:
+      - "12306:12306"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=12306
+      - TZ=Asia/Shanghai

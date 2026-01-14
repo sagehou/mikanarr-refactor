@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mikanarr - Mikan to Sonarr Bridge</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="login-container" class="login-container d-none">
+      <div class="login-box">
+        <div class="text-center mb-4">
+          <h2><i class="bi bi-cloud-download"></i> Mikanarr</h2>
+          <p class="text-muted">Mikan to Sonarr Bridge</p>
+        </div>
+        <form id="login-form">
+          <div class="mb-3">
+            <label for="username" class="form-label">用户名</label>
+            <input type="text" class="form-control" id="username" required>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">密码</label>
+            <input type="password" class="form-control" id="password" required>
+          </div>
+          <div id="login-error" class="alert alert-danger d-none"></div>
+          <button type="submit" class="btn btn-primary w-100">登录</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="main-container" class="d-none">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="/">
+            <i class="bi bi-cloud-download"></i> Mikanarr
+          </a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+              <li class="nav-item">
+                <a class="nav-link active" href="/#">Patterns</a>
+              </li>
+            </ul>
+            <div class="d-flex">
+              <button class="btn btn-outline-light" id="logout-btn">
+                <i class="bi bi-box-arrow-right"></i> 退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <div class="container mt-4">
+        <div id="pattern-list" class="pattern-list">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Patterns</h2>
+            <div class="d-flex gap-2">
+              <input type="text" class="form-control" id="search-input" placeholder="搜索...">
+              <button class="btn btn-primary" id="new-pattern-btn">
+                <i class="bi bi-plus-lg"></i> 新建
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>系列</th>
+                      <th>季度</th>
+                      <th>语言</th>
+                      <th>质量</th>
+                      <th>字幕组</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pattern-table-body">
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="pattern-edit" class="pattern-edit d-none">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 id="edit-title">新建 Pattern</h2>
+            <button class="btn btn-outline-secondary" id="back-btn">
+              <i class="bi bi-arrow-left"></i> 返回
+            </button>
+          </div>
+
+          <div class="row">
+            <div class="col-lg-8">
+              <div class="card mb-4">
+                <div class="card-body">
+                  <form id="pattern-form">
+                    <input type="hidden" id="pattern-id">
+                    
+                    <div class="mb-3">
+                      <label for="remote" class="form-label">Remote RSS URL</label>
+                      <div class="input-group">
+                        <input type="url" class="form-control" id="remote" placeholder="https://mikanani.me/RSS/MyBangumi?token=xxx">
+                        <button class="btn btn-outline-secondary" type="button" id="refresh-rss-btn">
+                          <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                      </div>
+                      <div id="proxy-url-box" class="mt-2 d-none">
+                        <label class="form-label text-primary">Proxy URL:</label>
+                        <div class="input-group">
+                          <input type="text" class="form-control" id="proxy-url" readonly>
+                          <button class="btn btn-outline-primary" type="button" id="copy-proxy-btn">
+                            <i class="bi bi-clipboard"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="mb-3">
+                      <label for="pattern" class="form-label">Pattern (正则表达式)</label>
+                      <textarea class="form-control font-monospace" id="pattern" rows="3" 
+                        placeholder="\[Lilith-Raws\] (?<series>.+) - (?<episode>\d+) ..." required></textarea>
+                      <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="escape-btn">
+                          <i class="bi bi-code-slash"></i> Escape
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="episode-btn">
+                          <i class="bi bi-hash"></i> Episode
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="row mb-3">
+                      <div class="col-md-6">
+                        <label for="series" class="form-label">系列</label>
+                        <select class="form-select" id="series" required>
+                          <option value="">选择系列...</option>
+                        </select>
+                        <div id="tmdb-info-box" class="mt-2 d-none">
+                          <div class="card bg-light">
+                            <div class="card-body py-2">
+                              <div class="d-flex align-items-center">
+                                <img id="tmdb-poster" src="" alt="" class="tmdb-poster">
+                                <div class="ms-3">
+                                  <h6 class="mb-1" id="tmdb-title"></h6>
+                                  <p class="mb-0 text-muted small" id="tmdb-overview"></p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <label for="season" class="form-label">季度</label>
+                        <select class="form-select" id="season" required>
+                          <option value="">选择季度...</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="row mb-3">
+                      <div class="col-md-4">
+                        <label for="language" class="form-label">语言</label>
+                        <input type="text" class="form-control" id="language" value="Chinese">
+                      </div>
+                      <div class="col-md-4">
+                        <label for="quality" class="form-label">质量</label>
+                        <input type="text" class="form-control" id="quality" value="WEBDL 1080p">
+                      </div>
+                      <div class="col-md-4">
+                        <label for="offset" class="form-label">偏移</label>
+                        <input type="number" class="form-control" id="offset" value="0">
+                      </div>
+                    </div>
+
+                    <div class="mb-3">
+                      <label for="releasegroup" class="form-label">字幕组</label>
+                      <input type="text" class="form-control" id="releasegroup" placeholder="Lilith-Raws">
+                    </div>
+
+                    <div class="d-flex gap-2">
+                      <button type="submit" class="btn btn-primary" id="save-btn">
+                        <i class="bi bi-check-lg"></i> 保存
+                      </button>
+                      <button type="button" class="btn btn-outline-secondary" id="cancel-btn">
+                        取消
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-lg-4">
+              <div class="card sticky-top" style="top: 80px;">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="bi bi-rss"></i> RSS 预览</h6>
+                </div>
+                <div class="card-body">
+                  <div id="rss-preview" class="rss-preview">
+                    <p class="text-muted text-center">输入 RSS URL 加载预览</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
