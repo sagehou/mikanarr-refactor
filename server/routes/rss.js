@@ -35,7 +35,10 @@ router.get('/*', async (req, res) => {
     console.log(`[RSS] Fetching from: ${mikanUrl}`);
 
     const response = await axios.get(mikanUrl, {
-      timeout: 15000
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
     });
 
     const parser = new xml2js.Parser();
@@ -72,9 +75,20 @@ router.get('/*', async (req, res) => {
     console.error('[RSS] Error details:', {
       path: req.path,
       query: req.query,
+      error: {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data
+      },
       stack: error.stack
     });
-    res.status(500).send(`Error: ${error.message}`);
+
+    const errorMessage = error.response?.status
+      ? `Mikanani returned ${error.response.status}: ${error.message}`
+      : `Failed to fetch from Mikanani: ${error.message}`;
+
+    res.status(500).send(`Error: ${errorMessage}`);
   }
 });
 
