@@ -194,11 +194,6 @@ router.post('/import', verifyToken, async (req, res) => {
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
-  } catch (error) {
-    console.error('[patterns] Import error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
 
 // 其他路由需要认证
 router.use(verifyToken);
