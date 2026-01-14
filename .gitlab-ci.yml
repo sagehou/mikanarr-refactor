@@ -51,6 +51,7 @@ publish-arm:
 
 deploy:
   stage: deploy
+  image: alpine:latest
   tags:
     - k8s
     - arm
