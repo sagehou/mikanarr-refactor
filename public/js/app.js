@@ -26,7 +26,7 @@ class MikanarrApp {
     }
   }
 
-  setupEventListeners() {
+setupEventListeners() {
     document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
     document.getElementById('new-pattern-btn').addEventListener('click', () => this.showPatternEdit());
@@ -41,6 +41,8 @@ class MikanarrApp {
     document.getElementById('series').addEventListener('change', () => this.loadSeasons());
     document.getElementById('pattern').addEventListener('input', () => this.updateRssPreview());
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
+    document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
+    document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
   }
 
   async handleLogin(e) {
@@ -540,6 +542,80 @@ class MikanarrApp {
     const url = document.getElementById('proxy-url').value;
     navigator.clipboard.writeText(url);
     alert('Proxy URL 已复制到剪贴板');
+  }
+
+  async exportPatterns() {
+    try {
+      const response = await this.apiRequest('/api/patterns/export');
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `patterns_export_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      alert('Patterns 导出成功！');
+    } catch (error) {
+      console.error('[exportPatterns] Failed:', error);
+      alert(`导出失败: ${error.message}`);
+    }
+  }
+
+  async importPatterns(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (!file.name.endsWith('.json')) {
+      alert('请选择 JSON 文件');
+      return;
+    }
+    
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data.patterns || !Array.isArray(data.patterns)) {
+        throw new Error('无效的导出文件格式');
+      }
+      
+      const response = await this.apiRequest('/api/patterns/import', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`导入完成！成功导入 ${result.importedCount} 个 patterns，${result.errorCount} 个错误`);
+        if (result.errors.length > 0) {
+          console.error('Import errors:', result.errors);
+          alert('部分 patterns 导入失败，请查看控制台获取详细信息');
+        }
+        this.loadPatterns();
+      } else {
+        throw new Error(result.message || '导入失败');
+      }
+      
+      // 清空文件输入
+      event.target.value = '';
+    } catch (error) {
+      console.error('[importPatterns] Failed:', error);
+      alert(`导入失败: ${error.message}`);
+    }
   }
 
   filterPatterns(query) {
