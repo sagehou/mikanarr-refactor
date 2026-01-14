@@ -197,13 +197,13 @@ class MikanarrApp {
   async loadTmdbInfo(series) {
     const tmdbBox = document.getElementById('tmdb-info-box');
 
-    if (!series?.tvdbId) {
+    if (!series?.tmdbId) {
       tmdbBox.classList.add('d-none');
       return;
     }
 
     try {
-      const response = await this.apiRequest(`/tmdb/tv/${series.tvdbId}?language=zh-CN`);
+      const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}?language=zh-CN`);
 
       // Handle 503 - TMDB not configured
       if (response.status === 503) {
