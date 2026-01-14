@@ -1,46 +1,23 @@
-# Build stage
-FROM node:20-alpine AS builder
+FROM node:18-alpine
 
 WORKDIR /app
 
 # Copy package files
-COPY web/package*.json web/
-COPY server/package*.json server/
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --only=production
 
-# Install web dependencies
-RUN cd web && npm ci
+# Copy application code
+COPY public ./public
+COPY server ./server
 
-# Copy source code
-COPY web/ web/
-COPY server/ server/
-
-# Build frontend
-RUN cd web && npm run build
-
-# Build backend
-RUN npm run build:server
-
-# Production stage
-FROM node:20-alpine
-
-WORKDIR /app
-
-# Copy built files
-COPY --from=builder /app/web/dist web/dist
-COPY --from=builder /app/server/dist server
-COPY --from=builder /app/node_modules node_modules
-COPY --from=builder /app/package.json .
-
-# Copy data directory structure
+# Create data directory
 RUN mkdir -p data
 
-# Create startup script
-RUN printf '#!/bin/sh\ncd /app\nnode server/index.js' > /app/start.sh && chmod +x /app/start.sh
-
 EXPOSE 12306
-VOLUME /data
-CMD ["/app/start.sh"]
+
+ENV PORT=12306
+ENV NODE_ENV=production
+
+CMD ["npm", "start"]
