@@ -101,11 +101,16 @@ class MikanarrApp {
       const series = await response.json();
       console.log('[loadSeries] Response type:', typeof series);
       console.log('[loadSeries] Is array:', Array.isArray(series));
-      console.log('[loadSeries] Full response:', series);
       
       if (!Array.isArray(series)) {
+        // Check if response is HTML (auth page)
+        if (typeof series === 'string' && series.includes('<!DOCTYPE html>')) {
+          throw new Error('Sonarr returned an HTML login page. Please check SONARR_HOST - it should be the direct Sonarr URL, not an auth proxy.');
+        }
         throw new Error(`Invalid response type: expected array, got ${typeof series}`);
       }
+      
+      console.log('[loadSeries] Loaded', series.length, 'series');
       
       console.log('[loadSeries] Loaded', series.length, 'series');
       

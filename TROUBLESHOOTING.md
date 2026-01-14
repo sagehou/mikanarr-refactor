@@ -14,18 +14,30 @@
    - 检查 `.env` 文件是否存在
    - 确认 `SONARR_API_KEY` 和 `SONARR_HOST` 是否正确
 
-2. **Sonarr 不可访问**
+2. **SONARR_HOST 指向认证代理（常见问题）**
+   - **错误**: SONARR_HOST 指向经过 authentik/traefik 等认证的地址
+   - **正确**: SONARR_HOST 必须是 Sonarr 的**内部/直接访问地址**
+
+   **如何找到正确的 Sonarr 地址：**
+   - 查看你的 Sonarr 配置（通常是 `config.xml` 或 Docker 端口映射）
+   - 常见格式：
+     - `http://sonarr:8989` (Docker 内部网络)
+     - `http://192.168.1.100:8989` (局域网 IP)
+     - `http://localhost:8989` (如果和 Sonarr 在同一服务器)
+   - **不要**使用经过认证代理的地址，如 `https://sonarr.yourdomain.com`
+
+3. **Sonarr 不可访问**
    - 检查 Mikanarr 所在服务器能否访问 Sonarr
    - 使用 `curl` 或浏览器测试：
      ```bash
-     curl -H "X-Api-Key: YOUR_KEY" https://your-sonarr.com/api/v3/series
+     curl -H "X-Api-Key: YOUR_KEY" http://sonarr:8989/api/v3/series
      ```
 
-3. **API Key 错误**
+4. **API Key 错误**
    - 确认 API Key 没有多余空格
    - 重新从 Sonarr 设置页面获取
 
-4. **Sonarr 版本问题**
+5. **Sonarr 版本问题**
    - 确认 Sonarr 版本为 v3.x
    - 旧版本 API 路径不同
 
