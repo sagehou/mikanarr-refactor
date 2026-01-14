@@ -27,14 +27,12 @@ app.use('/proxy', proxyRoutes);
 app.use('/sonarr', sonarrRoutes);
 app.use('/RSS', rssRoutes);
 
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-  const buildPath = path.join(__dirname, '../web/dist');
-  app.use(express.static(buildPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(buildPath, 'index.html'));
-  });
-}
+// Serve static files
+const buildPath = path.join(__dirname, '../web/dist');
+app.use(express.static(buildPath));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(buildPath, 'index.html'));
+});
 
 // Error handler
 app.use(errorHandler);
