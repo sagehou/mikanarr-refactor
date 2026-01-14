@@ -282,19 +282,24 @@ class MikanarrApp {
   }
 
   async editPattern(id) {
+    console.log('[editPattern] Called with id:', id);
     try {
       const response = await this.apiRequest(`/api/patterns/${id}`);
+      console.log('[editPattern] Response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.log('[editPattern] Error data:', errorData);
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
       const pattern = await response.json();
+      console.log('[editPattern] Loaded pattern:', pattern);
       this.currentPatternId = id;
       this.showPatternEdit(pattern);
     } catch (error) {
       console.error('[editPattern] Failed to load pattern:', error);
+      console.error('[editPattern] Error stack:', error.stack);
       alert('加载 Pattern 失败: ' + error.message);
     }
   }
@@ -588,5 +593,6 @@ class MikanarrApp {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[App] Mikanarr v2.1.0 - Build: 2025-01-14');
   new MikanarrApp();
 });
