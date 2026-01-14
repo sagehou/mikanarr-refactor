@@ -11,6 +11,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Install web dependencies
+RUN cd web && npm ci
+
 # Copy source code
 COPY web/ web/
 COPY server/ server/
