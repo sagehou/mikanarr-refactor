@@ -31,7 +31,7 @@ WORKDIR /app
 
 # Copy built files
 COPY --from=builder /app/web/dist web/dist
-COPY --from=builder /app/dist/server server
+COPY --from=builder /app/server/dist server
 COPY --from=builder /app/node_modules node_modules
 COPY --from=builder /app/package.json .
 
@@ -39,7 +39,7 @@ COPY --from=builder /app/package.json .
 RUN mkdir -p data
 
 # Create startup script
-RUN printf '#!/bin/sh\nnode server/index.js' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\ncd /app\nnode server/index.js' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 12306
 VOLUME /data
