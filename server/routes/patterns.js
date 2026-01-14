@@ -111,12 +111,59 @@ router.post('/import', verifyToken, async (req, res) => {
         
         console.log('[patterns] Successfully cleared all existing patterns');
         
-        // 重置自增ID
+        // 重置自增ID - 使用多种方法确保成功
         try {
-          db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
-          console.log('[patterns] Reset auto-increment counter');
-        } catch (seqError) {
-          console.log('[patterns] Note: sqlite_sequence not found or already empty');
+          // 方法1: 删除sqlite_sequence记录
+          try {
+            db.exec('DELETE FROM sqlite_sequence WHERE name = "patterns"');
+            console.log('[patterns] Method 1: Deleted from sqlite_sequence');
+          } catch (seqError) {
+            console.log('[patterns] Method 1 failed:', seqError.message);
+          }
+          
+          // 方法2: 直接设置自增ID为0
+          try {
+            db.exec('UPDATE sqlite_sequence SET seq = 0 WHERE name = "patterns"');
+            console.log('[patterns] Method 2: Updated sqlite_sequence seq to 0');
+          } catch (seqError2) {
+            console.log('[patterns] Method 2 failed:', seqError2.message);
+          }
+          
+          // 方法3: 使用VACUUM重置整个数据库（最后手段）
+          try {
+            // 检查当前ID
+            const currentSeq = db.prepare('SELECT seq FROM sqlite_sequence WHERE name = "patterns"').get();
+            console.log('[patterns] Current seq value:', currentSeq);
+            
+            if (!currentSeq || currentSeq.seq > 0) {
+              // 手动插入再删除来重置ID
+              db.exec('INSERT INTO patterns (pattern, series, season) VALUES ("temp", "temp", "temp")');
+              const lastId = db.prepare('SELECT last_insert_rowid() as id').get().id;
+              console.log('[patterns] Inserted temp record with ID:', lastId);
+              
+              db.exec('DELETE FROM patterns WHERE pattern = "temp"');
+              console.log('[patterns] Deleted temp record');
+            }
+          } catch (manualError) {
+            console.log('[patterns] Method 3 (manual) failed:', manualError.message);
+          }
+          
+          // 验证ID是否重置
+          try {
+            const newRecord = db.prepare('INSERT INTO patterns (pattern, series, season) VALUES ("test", "test", "test")').run();
+            const testId = newRecord.lastInsertRowid;
+            db.exec('DELETE FROM patterns WHERE pattern = "test"');
+            console.log('[patterns] ID reset verification - new ID starts from:', testId);
+            
+            if (testId !== 1) {
+              console.warn('[patterns] WARNING: ID did not reset to 1, starts from:', testId);
+            }
+          } catch (verifyError) {
+            console.error('[patterns] ID reset verification failed:', verifyError);
+          }
+          
+        } catch (error) {
+          console.error('[patterns] All ID reset methods failed:', error);
         }
         
         actionMessage = 'All existing patterns have been cleared and ';
