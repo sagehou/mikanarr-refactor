@@ -605,9 +605,18 @@ setupEventListeners() {
         throw new Error('无效的导出文件格式');
       }
       
+      // 询问用户导入模式
+      const mode = await this.showImportModeDialog();
+      if (!mode) return; // 用户取消了
+      
+      const importData = {
+        ...data,
+        mode: mode
+      };
+      
       const response = await this.apiRequest('/api/patterns/import', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(importData)
       });
       
       if (!response.ok) {
@@ -618,11 +627,20 @@ setupEventListeners() {
       const result = await response.json();
       
       if (result.success) {
-        alert(`导入完成！成功导入 ${result.importedCount} 个 patterns，${result.errorCount} 个错误`);
+        let message = `导入完成！成功导入 ${result.importedCount} 个 patterns，${result.errorCount} 个错误`;
+        if (result.mode === 'overwrite') {
+          message += '\n\n注意：所有现有数据已被覆盖，ID已重新排序从1开始';
+        } else {
+          message += '\n\n注意：数据已追加到现有patterns之后';
+        }
+        
+        alert(message);
+        
         if (result.errors.length > 0) {
           console.error('Import errors:', result.errors);
           alert('部分 patterns 导入失败，请查看控制台获取详细信息');
         }
+        
         this.loadPatterns();
       } else {
         throw new Error(result.message || '导入失败');
@@ -634,6 +652,79 @@ setupEventListeners() {
       console.error('[importPatterns] Failed:', error);
       alert(`导入失败: ${error.message}`);
     }
+  }
+
+  showImportModeDialog() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      `;
+      
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.style.cssText = `
+        background: white;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      `;
+      
+      modal.innerHTML = `
+        <h3 class="mb-3">选择导入模式</h3>
+        <p class="mb-4">请选择如何导入patterns数据：</p>
+        <div class="d-flex flex-column gap-2">
+          <button class="btn btn-primary" onclick="confirmImport('append')">
+            <i class="bi bi-plus-circle"></i> 追加模式
+            <small class="d-block text-muted mt-1">将新数据添加到现有patterns之后，保留原有ID</small>
+          </button>
+          <button class="btn btn-warning" onclick="confirmImport('overwrite')">
+            <i class="bi bi-arrow-clockwise"></i> 覆盖模式
+            <small class="d-block text-muted mt-1">删除所有现有数据，重新导入并重置ID从1开始</small>
+          </button>
+        </div>
+        <div class="mt-3 text-end">
+          <button class="btn btn-secondary" onclick="cancelImport()">取消</button>
+        </div>
+      `;
+      
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      
+      // 全局函数供按钮调用
+      window.confirmImport = (mode) => {
+        document.body.removeChild(overlay);
+        delete window.confirmImport;
+        delete window.cancelImport;
+        resolve(mode);
+      };
+      
+      window.cancelImport = () => {
+        document.body.removeChild(overlay);
+        delete window.confirmImport;
+        delete window.cancelImport;
+        resolve(null);
+      };
+      
+      // 点击背景关闭
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          window.cancelImport();
+        }
+      });
+    });
   }
 
   filterPatterns(query) {

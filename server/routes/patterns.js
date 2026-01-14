@@ -29,7 +29,7 @@ router.get('/export', (req, res) => {
 // 导入patterns数据 - 需要认证
 router.post('/import', verifyToken, async (req, res) => {
   try {
-    const { patterns } = req.body;
+    const { patterns, mode = 'append' } = req.body; // 默认为追加模式
     
     if (!Array.isArray(patterns)) {
       return res.status(400).json({ error: 'Invalid data format: patterns should be an array' });
@@ -71,18 +71,23 @@ router.post('/import', verifyToken, async (req, res) => {
       }
     }
     
-    // 第二步：删除所有现有patterns
-    try {
-      db.exec('DELETE FROM patterns');
-      console.log('[patterns] Cleared all existing patterns');
-    } catch (error) {
-      console.error('[patterns] Error clearing patterns:', error);
-      errors.push(`Error clearing existing patterns: ${error.message}`);
-      errorCount++;
+    let successCount = 0;
+    let actionMessage = '';
+    
+    if (mode === 'overwrite') {
+      // 覆盖模式：先删除所有现有patterns
+      try {
+        db.exec('DELETE FROM patterns');
+        console.log('[patterns] Cleared all existing patterns');
+        actionMessage = 'All existing patterns have been cleared and ';
+      } catch (error) {
+        console.error('[patterns] Error clearing patterns:', error);
+        errors.push(`Error clearing existing patterns: ${error.message}`);
+        errorCount++;
+      }
     }
     
-    // 第三步：重新插入patterns，ID会自动重新开始
-    let successCount = 0;
+    // 插入patterns（追加模式或覆盖模式）
     for (const pattern of validPatterns) {
       try {
         const createdPattern = createPattern(pattern);
@@ -93,12 +98,20 @@ router.post('/import', verifyToken, async (req, res) => {
       }
     }
     
+    let finalMessage = '';
+    if (mode === 'overwrite') {
+      finalMessage = `${actionMessage}${successCount} patterns imported, ${errorCount} errors. Patterns have been re-indexed starting from ID 1.`;
+    } else {
+      finalMessage = `${successCount} patterns imported, ${errorCount} errors. Data has been appended to existing patterns.`;
+    }
+    
     res.json({
       success: true,
       importedCount: successCount,
       errorCount,
       errors,
-      message: `Import completed: ${successCount} patterns imported, ${errorCount} errors. All patterns have been re-indexed starting from ID 1.`
+      mode,
+      message: finalMessage
     });
   } catch (error) {
     console.error('[patterns] Import error:', error);
