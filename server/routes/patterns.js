@@ -19,8 +19,14 @@ router.post('/', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const pattern = getPattern(parseInt(req.params.id));
-  if (!pattern) return res.status(404).json({ error: 'Pattern not found' });
+  const id = parseInt(req.params.id);
+  console.log(`[patterns] GET /${id}`);
+  const pattern = getPattern(id);
+  if (!pattern) {
+    console.error(`[patterns] Pattern not found: ${id}`);
+    return res.status(404).json({ error: 'Pattern not found' });
+  }
+  console.log(`[patterns] Found pattern:`, pattern.series);
   res.json(pattern);
 });
 

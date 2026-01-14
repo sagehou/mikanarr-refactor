@@ -28,7 +28,12 @@ function getPatterns() {
 }
 
 function getPattern(id) {
-  return db.prepare('SELECT * FROM patterns WHERE id = ?').get(id);
+  try {
+    return db.prepare('SELECT * FROM patterns WHERE id = ?').get(id);
+  } catch (error) {
+    console.error('[database] Error getting pattern:', id, error);
+    throw error;
+  }
 }
 
 function createPattern(pattern) {

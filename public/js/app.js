@@ -196,7 +196,7 @@ class MikanarrApp {
 
   async loadTmdbInfo(series) {
     const tmdbBox = document.getElementById('tmdb-info-box');
-    
+
     if (!series?.tvdbId) {
       tmdbBox.classList.add('d-none');
       return;
@@ -204,13 +204,26 @@ class MikanarrApp {
 
     try {
       const response = await this.apiRequest(`/tmdb/tv/${series.tvdbId}?language=zh-CN`);
-      if (!response.ok) throw new Error('TMDB request failed');
-      
+
+      // Handle 503 - TMDB not configured
+      if (response.status === 503) {
+        console.warn('[loadTmdbInfo] TMDB not configured, skipping');
+        tmdbBox.classList.add('d-none');
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[loadTmdbInfo] TMDB request failed:', errorData);
+        tmdbBox.classList.add('d-none');
+        return;
+      }
+
       const data = await response.json();
       this.renderTmdbInfo(data);
       tmdbBox.classList.remove('d-none');
     } catch (error) {
-      console.error('Failed to load TMDB info:', error);
+      console.error('[loadTmdbInfo] Failed to load TMDB info:', error);
       tmdbBox.classList.add('d-none');
     }
   }
@@ -271,11 +284,18 @@ class MikanarrApp {
   async editPattern(id) {
     try {
       const response = await this.apiRequest(`/api/patterns/${id}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
       const pattern = await response.json();
       this.currentPatternId = id;
       this.showPatternEdit(pattern);
     } catch (error) {
-      console.error('Failed to load pattern:', error);
+      console.error('[editPattern] Failed to load pattern:', error);
+      alert('加载 Pattern 失败: ' + error.message);
     }
   }
 
@@ -548,7 +568,16 @@ class MikanarrApp {
       mergedOptions.body = options.body;
     }
 
-    return fetch(url, mergedOptions);
+    const response = await fetch(url, mergedOptions);
+
+    // Check if response is HTML (likely an error page)
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('text/html')) {
+      console.error('[apiRequest] Received HTML instead of JSON:', url, response.status);
+      throw new Error('Server returned HTML instead of JSON (likely a server error)');
+    }
+
+    return response;
   }
 
   escapeHtml(text) {
