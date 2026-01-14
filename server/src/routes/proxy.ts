@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
     res.set('Content-Type', 'application/xml');
     res.send(response.data);
   } catch (error) {
-    res.status(500).send(`Failed to fetch: ${error.message}`);
+    res.status(500).send(`Failed to fetch: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
 

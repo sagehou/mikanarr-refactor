@@ -5,7 +5,17 @@ import { getPatterns } from '../db.js';
 
 const router = express.Router();
 
-function transformTitle(title, { pattern, series, season, language, quality, offset, releasegroup }) {
+interface PatternData {
+  pattern: string;
+  series: string;
+  season: string;
+  language?: string;
+  quality?: string;
+  offset?: number;
+  releasegroup?: string;
+}
+
+function transformTitle(title: string, { pattern, series, season, language, quality, offset, releasegroup }: PatternData) {
   try {
     const regex = new RegExp(`^${pattern}$`);
     const match = title.match(regex);
@@ -68,9 +78,9 @@ router.get('/*', async (req, res) => {
     const builder = new (await import('xml2js')).Builder();
     res.set('Content-Type', 'application/xml');
     res.send(builder.buildObject(rss));
-  } catch (error) {
+} catch (error) {
     console.error('RSS transform error:', error);
-    res.status(500).send(`Error: ${error.message}`);
+    res.status(500).send(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
 

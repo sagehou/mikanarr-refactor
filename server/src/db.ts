@@ -29,11 +29,23 @@ export function getPatterns() {
   return db.prepare('SELECT * FROM patterns ORDER BY created_at DESC').all();
 }
 
-export function getPattern(id) {
+export function getPattern(id: number) {
   return db.prepare('SELECT * FROM patterns WHERE id = ?').get(id);
 }
 
-export function createPattern(pattern) {
+interface Pattern {
+  id?: number;
+  remote?: string;
+  pattern: string;
+  series: string;
+  season: string;
+  language?: string;
+  quality?: string;
+  offset?: number;
+  releasegroup?: string;
+}
+
+export function createPattern(pattern: Pattern) {
   const stmt = db.prepare(`
     INSERT INTO patterns (remote, pattern, series, season, language, quality, offset, releasegroup)
     VALUES (@remote, @pattern, @series, @season, @language, @quality, @offset, @releasegroup)
@@ -42,7 +54,7 @@ export function createPattern(pattern) {
   return getPattern(result.lastInsertRowid);
 }
 
-export function updatePattern(id, pattern) {
+export function updatePattern(id: number, pattern: Pattern) {
   const stmt = db.prepare(`
     UPDATE patterns SET
       remote = @remote,
@@ -59,7 +71,7 @@ export function updatePattern(id, pattern) {
   return getPattern(id);
 }
 
-export function deletePattern(id) {
+export function deletePattern(id: number) {
   const stmt = db.prepare('DELETE FROM patterns WHERE id = ?');
   return stmt.run(id);
 }

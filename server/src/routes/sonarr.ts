@@ -9,7 +9,7 @@ const SONARR_HOST = process.env.SONARR_HOST;
 router.use(verifyToken);
 
 router.all('/*', async (req, res) => {
-  const path = req.params[0];
+  const path = req.params[0] || '';
   try {
     const response = await axios({
       method: req.method,
@@ -23,7 +23,8 @@ router.all('/*', async (req, res) => {
     });
     res.json(response.data);
   } catch (error) {
-    res.status(error.response?.status || 500).send(error.message);
+    const axiosError = error as { response?: { status?: number }, message?: string };
+    res.status(axiosError.response?.status || 500).send(axiosError.message || 'Unknown error');
   }
 });
 
