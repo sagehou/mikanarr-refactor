@@ -10,6 +10,8 @@ router.all('/*', async (req, res) => {
   const SONARR_HOST = process.env.SONARR_HOST;
 
   console.log(`[Sonarr Proxy] Request: ${req.method} ${req.originalUrl}`);
+  console.log(`[Sonarr Proxy] req.path: ${req.path}`);
+  console.log(`[Sonarr Proxy] req.params[0]: ${req.params[0] || 'undefined'}`);
 
   if (!SONARR_API_KEY || !SONARR_HOST) {
     console.error('[Sonarr Proxy] Missing configuration');
@@ -18,7 +20,9 @@ router.all('/*', async (req, res) => {
     });
   }
 
-  const path = req.path.startsWith('/') ? req.path : `/${req.path}`;
+  // Use req.params[0] to match original behavior
+  const path = req.params[0] || '';
+  console.log(`[Sonarr Proxy] Using path: ${path}`);
   console.log(`[Sonarr Proxy] Forwarding to: ${SONARR_HOST}${path}`);
 
   try {
