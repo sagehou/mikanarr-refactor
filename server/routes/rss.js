@@ -25,12 +25,14 @@ function transformTitle(title, pattern) {
 router.get('/*', async (req, res) => {
   try {
     console.log(`[RSS] Request: ${req.path} with query:`, req.query);
+    console.log(`[RSS] Original URL: ${req.originalUrl}`);
 
     const patterns = getPatterns();
 
-    // Build mikan URL with all query parameters
+    // Use req.originalUrl to get the full path including /RSS prefix
+    const originalPath = req.originalUrl.split('?')[0];
     const queryString = new URLSearchParams(req.query).toString();
-    const mikanUrl = `https://mikanani.me${req.path}${queryString ? '?' + queryString : ''}`;
+    const mikanUrl = `https://mikanani.me${originalPath}${queryString ? '?' + queryString : ''}`;
 
     console.log(`[RSS] Fetching from: ${mikanUrl}`);
 
