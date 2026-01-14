@@ -90,11 +90,37 @@ class MikanarrApp {
   async loadSeries() {
     try {
       const response = await this.apiRequest('/sonarr/api/v3/series');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
       const series = await response.json();
       this.seriesList = series;
       this.renderSeriesOptions(series);
     } catch (error) {
       console.error('Failed to load series:', error);
+      const errorMsg = error.message || 'Unknown error';
+      
+      // Show error message to user
+      const seriesSelect = document.getElementById('series');
+      if (seriesSelect) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-warning mt-2';
+        errorDiv.innerHTML = `
+          <i class="bi bi-exclamation-triangle"></i> 
+          加载 Sonarr 系列失败: ${errorMsg}
+          <br>
+          <small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>
+        `;
+        
+        // Remove existing error if any
+        const existingError = seriesSelect.parentElement.querySelector('.alert');
+        if (existingError) {
+          existingError.remove();
+        }
+        
+        seriesSelect.parentElement.appendChild(errorDiv);
+      }
     }
   }
 
@@ -312,19 +338,54 @@ class MikanarrApp {
     try {
       const encoded = encodeURIComponent(remote);
       const response = await this.apiRequest(`/proxy?url=${encoded}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
       const text = await response.text();
-      
+
       const parser = new DOMParser();
       const xml = parser.parseFromString(text, 'text/xml');
+
+      // Check for XML parsing errors
+      const parseError = xml.querySelector('parsererror');
+      if (parseError) {
+        throw new Error('Failed to parse XML response');
+      }
+
       const items = Array.from(xml.querySelectorAll('item title')).map(el => el.textContent);
-      
+
+      if (!items.length) {
+        throw new Error('No items found in RSS feed');
+      }
+
       this.rssItems = items.slice(0, 50);
       this.renderRssPreview();
       this.updateProxyUrl();
     } catch (error) {
       console.error('Failed to load RSS preview:', error);
       this.rssItems = [];
-      previewDiv.innerHTML = '<p class="text-danger text-center">加载失败</p>';
+
+      const errorMsg = error.message || '加载失败';
+
+      // Show detailed error
+      previewDiv.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-circle"></i> ${errorMsg}
+          <br>
+          <small class="text-muted">
+            请检查：
+            <ul class="mb-0 mt-1 small">
+              <li>URL 格式是否正确</li>
+              <li>Token 是否有效</li>
+              <li>Mikan 网站是否可访问</li>
+              <li>是否需要登录</li>
+            </ul>
+          </small>
+        </div>
+      `;
     }
   }
 
@@ -397,13 +458,13 @@ class MikanarrApp {
     }
 
     try {
-      const url = new URL(remote);
       const base = window.location.origin;
-      const proxyUrl = `${base}/RSS${url.pathname}?token=YOUR_TOKEN`;
+      const proxyUrl = remote.replace('https://mikanani.me', base);
       
       document.getElementById('proxy-url').value = proxyUrl;
       proxyBox.classList.remove('d-none');
-    } catch {
+    } catch (error) {
+      console.error('Failed to generate proxy URL:', error);
       proxyBox.classList.add('d-none');
     }
   }

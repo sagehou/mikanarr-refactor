@@ -8,14 +8,19 @@ router.use(verifyToken);
 router.all('/*', async (req, res) => {
   const SONARR_API_KEY = process.env.SONARR_API_KEY;
   const SONARR_HOST = process.env.SONARR_HOST;
-  
+
+  console.log(`[Sonarr Proxy] Request: ${req.method} ${req.path}`);
+
   if (!SONARR_API_KEY || !SONARR_HOST) {
-    return res.status(503).json({ 
-      error: 'Sonarr not configured. Set SONARR_API_KEY and SONARR_HOST environment variables.' 
+    console.error('[Sonarr Proxy] Missing configuration');
+    return res.status(503).json({
+      error: 'Sonarr not configured. Set SONARR_API_KEY and SONARR_HOST environment variables.'
     });
   }
-  
+
   const path = req.params[0] || '';
+  console.log(`[Sonarr Proxy] Forwarding to: ${SONARR_HOST}${path}`);
+
   try {
     const response = await axios({
       method: req.method,
@@ -26,12 +31,15 @@ router.all('/*', async (req, res) => {
         'X-Api-Key': SONARR_API_KEY,
         'Content-Type': 'application/json',
       },
+      timeout: 10000
     });
+    console.log(`[Sonarr Proxy] Response: ${response.status}`);
     res.json(response.data);
   } catch (error) {
     const axiosError = error;
-    res.status(axiosError.response?.status || 500).json({ 
-      error: axiosError.response?.data || axiosError.message || 'Unknown error' 
+    console.error('[Sonarr Proxy] Error:', axiosError.message);
+    res.status(axiosError.response?.status || 500).json({
+      error: axiosError.response?.data || axiosError.message || 'Unknown error'
     });
   }
 });
