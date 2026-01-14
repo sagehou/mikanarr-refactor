@@ -169,18 +169,31 @@ setupEventListeners() {
   async loadSeasons() {
     const seriesTitle = document.getElementById('series').value;
     const seasonSelect = document.getElementById('season');
+    const currentSeason = seasonSelect.value; // 保存当前选中的季度
+    
     seasonSelect.innerHTML = '<option value="">选择季度...</option>';
 
-    if (!seriesTitle) return;
+    if (!seriesTitle) {
+      if (currentSeason) {
+        seasonSelect.value = currentSeason; // 恢复选中的季度
+      }
+      return;
+    }
 
     const series = this.seriesList.find(s => s.title === seriesTitle);
     if (!series) {
       console.warn('[loadSeasons] Series not found in list:', seriesTitle);
+      if (currentSeason) {
+        seasonSelect.value = currentSeason; // 恢复选中的季度
+      }
       return;
     }
     
     if (!series.seasons) {
       console.warn('[loadSeasons] Series has no seasons:', seriesTitle);
+      if (currentSeason) {
+        seasonSelect.value = currentSeason; // 恢复选中的季度
+      }
       return;
     }
 
@@ -192,6 +205,11 @@ setupEventListeners() {
       option.textContent = `S${String(season.seasonNumber).padStart(2, '0')} ${season.monitored ? '' : '(未监控)'}`;
       seasonSelect.appendChild(option);
     });
+
+    // 恢复选中的季度
+    if (currentSeason) {
+      seasonSelect.value = currentSeason;
+    }
 
     await this.loadTmdbInfo(series);
   }

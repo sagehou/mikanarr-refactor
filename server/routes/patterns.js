@@ -27,7 +27,7 @@ router.get('/export', (req, res) => {
 });
 
 // 导入patterns数据 - 需要认证
-router.post('/import', verifyToken, (req, res) => {
+router.post('/import', verifyToken, async (req, res) => {
   try {
     const { patterns } = req.body;
     
@@ -38,7 +38,9 @@ router.post('/import', verifyToken, (req, res) => {
     let importedCount = 0;
     let errorCount = 0;
     const errors = [];
+    const validPatterns = [];
     
+    // 第一步：验证和预处理数据
     for (const pattern of patterns) {
       try {
         // 验证必需字段
@@ -48,10 +50,43 @@ router.post('/import', verifyToken, (req, res) => {
           continue;
         }
         
-        // 创建pattern，忽略id字段让数据库自动生成
-        const { id, ...patternData } = pattern;
-        const createdPattern = createPattern(patternData);
+        // 预处理数据，设置默认值
+        const processedPattern = {
+          remote: pattern.remote || '',
+          pattern: pattern.pattern,
+          series: pattern.series,
+          season: pattern.season,
+          language: pattern.language || 'Chinese',
+          quality: pattern.quality || 'WEBDL 1080p',
+          offset: pattern.offset || 0,
+          releasegroup: pattern.releasegroup || '',
+          created_at: pattern.created_at || new Date().toISOString()
+        };
+        
+        validPatterns.push(processedPattern);
         importedCount++;
+      } catch (error) {
+        errors.push(`Error processing pattern ${JSON.stringify(pattern)}: ${error.message}`);
+        errorCount++;
+      }
+    }
+    
+    // 第二步：删除所有现有patterns
+    try {
+      db.exec('DELETE FROM patterns');
+      console.log('[patterns] Cleared all existing patterns');
+    } catch (error) {
+      console.error('[patterns] Error clearing patterns:', error);
+      errors.push(`Error clearing existing patterns: ${error.message}`);
+      errorCount++;
+    }
+    
+    // 第三步：重新插入patterns，ID会自动重新开始
+    let successCount = 0;
+    for (const pattern of validPatterns) {
+      try {
+        const createdPattern = createPattern(pattern);
+        successCount++;
       } catch (error) {
         errors.push(`Error importing pattern ${JSON.stringify(pattern)}: ${error.message}`);
         errorCount++;
@@ -60,10 +95,10 @@ router.post('/import', verifyToken, (req, res) => {
     
     res.json({
       success: true,
-      importedCount,
+      importedCount: successCount,
       errorCount,
       errors,
-      message: `Import completed: ${importedCount} patterns imported, ${errorCount} errors`
+      message: `Import completed: ${successCount} patterns imported, ${errorCount} errors. All patterns have been re-indexed starting from ID 1.`
     });
   } catch (error) {
     console.error('[patterns] Import error:', error);
