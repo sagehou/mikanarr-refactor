@@ -143,3 +143,34 @@ select:focus {
   font-weight: 500;
   color: #495057;
 }
+
+/* 排序表头样式 */
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 1.5rem !important;
+}
+
+.sortable:hover {
+  background-color: #f8f9fa;
+}
+
+.sortable i {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.sortable.asc i.bi-arrow-down-up::before {
+  content: "↑";
+  opacity: 1;
+}
+
+.sortable.desc i.bi-arrow-down-up::before {
+  content: "↓";
+  opacity: 1;
+}

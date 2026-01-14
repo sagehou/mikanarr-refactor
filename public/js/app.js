@@ -43,8 +43,11 @@ setupEventListeners() {
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
     document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
-    document.getElementById('sort-by').addEventListener('change', () => this.loadPatterns());
-    document.getElementById('sort-order').addEventListener('change', () => this.loadPatterns());
+    
+    // 添加表头排序事件监听
+    document.querySelectorAll('.sortable').forEach(th => {
+      th.addEventListener('click', () => this.handleSortClick(th));
+    });
   }
 
   async handleLogin(e) {
@@ -83,15 +86,18 @@ setupEventListeners() {
 
   async loadPatterns() {
     try {
-      const sortBy = document.getElementById('sort-by').value;
-      const sortOrder = document.getElementById('sort-order').value;
-      const response = await this.apiRequest(`/api/patterns?sortBy=${sortBy}&order=${sortOrder}`);
+      const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
+      const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
       const patterns = await response.json();
       this.renderPatterns(patterns);
+      this.updateSortIndicators();
     } catch (error) {
       console.error('Failed to load patterns:', error);
     }
   }
+
+  // 当前排序状态
+  currentSort = { field: 'created_at', direction: 'desc' };
 
   async loadSeries() {
     try {
@@ -760,7 +766,7 @@ setupEventListeners() {
     });
   }
 
-  filterPatterns(query) {
+filterPatterns(query) {
     const rows = document.querySelectorAll('#pattern-table-body tr');
     const lowerQuery = query.toLowerCase();
 
@@ -768,6 +774,41 @@ setupEventListeners() {
       const text = row.textContent.toLowerCase();
       row.style.display = text.includes(lowerQuery) ? '' : 'none';
     });
+  }
+
+  handleSortClick(th) {
+    const sortField = th.dataset.sort;
+    
+    // 如果点击的是当前排序字段，则切换方向
+    if (this.currentSort.field === sortField) {
+      this.currentSort.direction = this.currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      // 否则设置新的排序字段，默认升序
+      this.currentSort = { field: sortField, direction: 'asc' };
+    }
+    
+    this.loadPatterns();
+  }
+
+  updateSortIndicators() {
+    // 清除所有排序指示器
+    document.querySelectorAll('.sortable').forEach(th => {
+      th.classList.remove('asc', 'desc');
+      const icon = th.querySelector('i');
+      if (icon) {
+        icon.className = 'bi bi-arrow-down-up';
+      }
+    });
+    
+    // 设置当前排序字段的指示器
+    const currentTh = document.querySelector(`[data-sort="${this.currentSort.field}"]`);
+    if (currentTh) {
+      currentTh.classList.add(this.currentSort.direction);
+      const icon = currentTh.querySelector('i');
+      if (icon) {
+        icon.className = `bi bi-arrow-down-up ${this.currentSort.direction}`;
+      }
+    }
   }
 
   async apiRequest(url, options = {}) {

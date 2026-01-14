@@ -77,111 +77,68 @@ router.post('/import', verifyToken, async (req, res) => {
     if (mode === 'overwrite') {
       // 覆盖模式：先删除所有现有patterns，并重置自增ID
       try {
-        // 先检查当前记录数
-        const countBefore = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
-        console.log(`[patterns] Records before delete: ${countBefore}`);
+        console.log('[patterns] Starting ID reset process...');
         
-        // 直接执行删除操作，better-sqlite3的exec本身就是原子的
-        const deleteResult = db.exec('DELETE FROM patterns');
-        console.log('[patterns] Delete operation executed, result:', deleteResult);
+        // 方法1: 删除并重建表（最可靠的方法）
+        console.log('[patterns] Method 1: Drop and recreate table');
         
-        // 验证删除是否成功
-        const countAfterDelete = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
-        console.log(`[patterns] Records after delete: ${countAfterDelete}`);
+        // 获取现有数据
+        const existingData = db.prepare('SELECT * FROM patterns').all();
+        console.log('[patterns] Backup', existingData.length, 'records');
         
-        if (countAfterDelete > 0) {
-          // 如果删除失败，尝试使用不同的方法
-          console.log('[patterns] Attempting alternative delete method...');
-          try {
-            const stmt = db.prepare('DELETE FROM patterns');
-            const result = stmt.run();
-            console.log('[patterns] Prepared statement delete result:', result);
-            
-            const countAfterStmt = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
-            console.log(`[patterns] Records after prepared statement: ${countAfterStmt}`);
-            
-            if (countAfterStmt > 0) {
-              throw new Error(`Failed to delete records. Still have ${countAfterStmt} records after multiple attempts`);
-            }
-          } catch (altError) {
-            console.error('[patterns] Alternative delete method also failed:', altError);
-            throw altError;
-          }
+        // 删除表
+        db.exec('DROP TABLE patterns');
+        console.log('[patterns] Dropped patterns table');
+        
+        // 重新创建表
+        db.exec(`
+          CREATE TABLE patterns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            remote TEXT,
+            pattern TEXT NOT NULL,
+            series TEXT NOT NULL,
+            season TEXT NOT NULL,
+            language TEXT DEFAULT 'Chinese',
+            quality TEXT DEFAULT 'WEBDL 1080p',
+            offset INTEGER DEFAULT 0,
+            releasegroup TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        console.log('[patterns] Recreated patterns table');
+        
+        // 验证表是否为空
+        const countAfterRecreate = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
+        console.log('[patterns] Records after table recreation:', countAfterRecreate);
+        
+        if (countAfterRecreate !== 0) {
+          throw new Error(`Table recreation failed. Still have ${countAfterRecreate} records`);
         }
         
-        console.log('[patterns] Successfully cleared all existing patterns');
+        console.log('[patterns] Successfully reset auto-increment ID by recreating table');
         
-        // 重置自增ID - 使用最直接有效的方法
-        try {
-          console.log('[patterns] Starting ID reset process...');
-          
-          // 方法1: 删除并重建表（最可靠的方法）
-          console.log('[patterns] Method 1: Drop and recreate table');
-          
-          // 获取现有数据
-          const existingData = db.prepare('SELECT * FROM patterns').all();
-          console.log('[patterns] Backup', existingData.length, 'records');
-          
-          // 删除表
-          db.exec('DROP TABLE patterns');
-          console.log('[patterns] Dropped patterns table');
-          
-          // 重新创建表
-          db.exec(`
-            CREATE TABLE patterns (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              remote TEXT,
-              pattern TEXT NOT NULL,
-              series TEXT NOT NULL,
-              season TEXT NOT NULL,
-              language TEXT DEFAULT 'Chinese',
-              quality TEXT DEFAULT 'WEBDL 1080p',
-              offset INTEGER DEFAULT 0,
-              releasegroup TEXT,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-          `);
-          console.log('[patterns] Recreated patterns table');
-          
-          // 验证表是否为空
-          const countAfterRecreate = db.prepare('SELECT COUNT(*) as count FROM patterns').get().count;
-          console.log('[patterns] Records after table recreation:', countAfterRecreate);
-          
-          if (countAfterRecreate !== 0) {
-            throw new Error(`Table recreation failed. Still have ${countAfterRecreate} records`);
-          }
-          
-          console.log('[patterns] Successfully reset auto-increment ID by recreating table');
-          
-        } catch (error) {
-          console.error('[patterns] Table recreation failed:', error);
-          
-          // 备用方法: 手动设置下一个ID
-          try {
-            console.log('[patterns] Attempting fallback method: manual ID reset');
-            
-            // 获取当前最大ID
-            const result = db.prepare('SELECT MAX(id) as max_id FROM patterns').get();
-            const currentMaxId = result.max_id || 0;
-            console.log('[patterns] Current max ID:', currentMaxId);
-            
-            // 如果表存在且有数据，手动重置
-            if (currentMaxId > 0) {
-              // 这个方法在某些SQLite版本中可能不工作，但值得一试
-              db.exec(`UPDATE sqlite_sequence SET seq = 0 WHERE name = 'patterns'`);
-              console.log('[patterns] Attempted to set seq = 0 in sqlite_sequence');
-            }
-            
-          } catch (fallbackError) {
-            console.error('[patterns] Fallback method also failed:', fallbackError);
-          }
-        }
-        
-        actionMessage = 'All existing patterns have been cleared and ';
       } catch (error) {
-        console.error('[patterns] Error clearing patterns:', error);
-        errors.push(`Error clearing existing patterns: ${error.message}`);
-        errorCount++;
+        console.error('[patterns] Table recreation failed:', error);
+        
+        // 备用方法: 手动设置下一个ID
+        try {
+          console.log('[patterns] Attempting fallback method: manual ID reset');
+          
+          // 获取当前最大ID
+          const result = db.prepare('SELECT MAX(id) as max_id FROM patterns').get();
+          const currentMaxId = result.max_id || 0;
+          console.log('[patterns] Current max ID:', currentMaxId);
+          
+          // 如果表存在且有数据，手动重置
+          if (currentMaxId > 0) {
+            // 这个方法在某些SQLite版本中可能不工作，但值得一试
+            db.exec(`UPDATE sqlite_sequence SET seq = 0 WHERE name = 'patterns'`);
+            console.log('[patterns] Attempted to set seq = 0 in sqlite_sequence');
+          }
+          
+        } catch (fallbackError) {
+          console.error('[patterns] Fallback method also failed:', fallbackError);
+        }
       }
     }
     
@@ -218,7 +175,7 @@ router.post('/import', verifyToken, async (req, res) => {
     
     let finalMessage = '';
     if (mode === 'overwrite') {
-      finalMessage = `${actionMessage}${successCount} patterns imported, ${errorCount} errors. Patterns have been re-indexed starting from ID 1. Total patterns in database: ${finalCount}`;
+      finalMessage = `${actionMessage}${successCount} patterns imported, ${errorCount} errors. Patterns have been re-indexed starting from ID 1 and sorted by ID. Total patterns in database: ${finalCount}`;
     } else {
       finalMessage = `${successCount} patterns imported, ${errorCount} errors. Data has been appended to existing patterns. Total patterns in database: ${finalCount}`;
     }
@@ -232,6 +189,11 @@ router.post('/import', verifyToken, async (req, res) => {
       finalCount,
       message: finalMessage
     });
+  } catch (error) {
+    console.error('[patterns] Import error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
   } catch (error) {
     console.error('[patterns] Import error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
