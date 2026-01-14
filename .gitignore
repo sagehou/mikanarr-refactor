@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+data/*.sqlite
+data/jwt.key
+data/jwt.key.pub
+.DS_Store
+*.log
