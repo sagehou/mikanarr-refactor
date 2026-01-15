@@ -422,26 +422,6 @@ setupEventListeners() {
       }
     };
 
-    // Removed languageProfileId addition logic
-      title: this.selectedSeries.title,
-      qualityProfileId: qualityProfileId,
-      path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
-      tvdbId: this.selectedSeries.tvdbId,
-      seasonFolder: seasonFolder,
-      monitored: monitor !== 'none',
-      seriesType: seriesType,
-      images: this.selectedSeries.images,
-      addOptions: {
-        monitor: monitor,
-        searchForMissingEpisodes: false
-      }
-    };
-
-    // Only add languageProfileId if it exists (Sonarr V3)
-    if (languageProfileId) {
-      payload.languageProfileId = languageProfileId;
-    }
-
     const submitBtn = document.getElementById('add-series-submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = '添加中...';
