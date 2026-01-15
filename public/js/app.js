@@ -240,7 +240,7 @@ setupEventListeners() {
       return;
     }
 
-    const series = this.seriesList.find(s => s.title === seriesTitle);
+    const series = this.seriesList.find(s => s.title.toLowerCase() === seriesTitle.toLowerCase());
     if (!series) {
       console.warn('[loadSeasons] Series not found in list:', seriesTitle);
       if (currentSeason) {
@@ -278,8 +278,8 @@ setupEventListeners() {
     tbody.innerHTML = '';
     
     patterns.forEach(pattern => {
-      // Find the series to get tmdbId for Chinese name lookup
-      const series = this.seriesList?.find(s => s.title === pattern.series);
+      // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
+      const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
       const displayName = zhName ? `${pattern.series} (${zhName})` : pattern.series;
 
