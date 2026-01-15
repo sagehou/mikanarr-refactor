@@ -18,7 +18,12 @@ router.get('/', async (req, res) => {
 
   try {
     const parsedUrl = new URL(url);
-    if (!ALLOWED_DOMAINS.some(d => parsedUrl.hostname.endsWith(d))) {
+    // Strict domain checking: match exact domain or subdomains
+    const isAllowed = ALLOWED_DOMAINS.some(d => 
+      parsedUrl.hostname === d || parsedUrl.hostname.endsWith('.' + d)
+    );
+
+    if (!isAllowed) {
       return res.status(403).send('Domain not allowed');
     }
 

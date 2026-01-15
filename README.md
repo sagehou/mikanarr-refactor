@@ -4,206 +4,118 @@ Mikanarr - Mikan Anime to Sonarr Bridge (重构版)
 
 ## 功能特性
 
-- ✅ 用户认证（JWT）
-- ✅ Pattern 管理（增删改查）
-- ✅ URL 判断和匹配（正则表达式）
-- ✅ Sonarr API 代理
-- ✅ RSS 转换（Mikan → Sonarr）
-- ✅ TMDB 中文剧集信息同步
-- ✅ 美观的响应式界面
-- ✅ 实时 RSS 预览
-
-## 技术栈
-
-- **后端**: Node.js + Express
-- **数据库**: SQLite (better-sqlite3)
-- **前端**: 原生 HTML/JS + Bootstrap 5
-- **认证**: JWT (RS512)
+- ✅ **RSS 转换**：将 Mikan RSS 转换为 Sonarr 可识别的标准格式，支持自定义正则表达式匹配剧集
+- ✅ **智能管理**：
+  - 自动同步 Sonarr 剧集列表
+  - TMDB 中文剧集信息自动匹配（支持英文/中文双语搜索）
+  - 自动检测并修复大小写不一致的系列名
+- ✅ **便捷操作**：
+  - **一键添加剧集**：直接从 RSS 搜索并添加新剧集到 Sonarr，自动配置根目录和质量
+  - **智能导入**：粘贴 Mikan URL 自动解析参数并匹配剧集
+  - **批量管理**：支持批量删除、批量修复系列名
+- ✅ **现代化界面**：
+  - 美拉德 (Maillard) 配色风格
+  - 深色模式支持
+  - 响应式设计，移动端友好
+- ✅ **安全可靠**：
+  - JWT 用户认证
+  - 图片代理服务（解决混合内容和访问受限问题）
+  - 支持 Traefik 等反向代理集成
 
 ## 快速开始
 
-### Docker 部署（推荐）
-
-```bash
-# 1. 创建数据目录
-mkdir -p data
-
-# 2. 创建 .env 文件
-cat > data/.env << EOF
-SONARR_API_KEY=your_sonarr_api_key
-SONARR_HOST=https://sonarr.yourdomain.com
-TMDB_API_KEY=your_tmdb_api_key
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your_password
-EOF
-
-# 3. 使用 Docker Compose
-docker-compose up -d
-```
-
-### 本地开发
-
-```bash
-# 1. 安装依赖
-npm install
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 填写配置
-
-# 3. 初始化数据库
-mkdir -p data
-
-# 4. 启动服务
-npm run dev
-```
-
-访问 http://localhost:12306
-
-## 配置说明
-
-### 环境变量
-
-| 变量名 | 说明 | 必填 |
-|--------|------|------|
-| `SONARR_API_KEY` | Sonarr API Key | 是 |
-| `SONARR_HOST` | Sonarr 地址 | 是 |
-| `TMDB_API_KEY` | TMDB API Key（用于中文剧集信息） | 否 |
-| `ADMIN_USERNAME` | 管理员用户名 | 是 |
-| `ADMIN_PASSWORD` | 管理员密码 | 是 |
-| `PORT` | 服务端口，默认 12306 | 否 |
-
-### Sonarr 配置
-
-1. 登录 Sonarr，获取 API Key
-2. 在 Mikanarr 中填写 SONARR_API_KEY 和 SONARR_HOST
-3. 创建 Pattern 时，Series 会自动从 Sonarr 同步
-
-### TMDB 配置（可选）
-
-1. 访问 https://www.themoviedb.org/settings/api 申请 API Key
-2. 在 .env 中填写 TMDB_API_KEY
-3. 启用后，选择 Series 时会显示中文剧集信息
-
-## 使用说明
-
-### 创建 Pattern
-
-1. 访问 Mikan Anime，复制需要订阅的 RSS URL
-2. 在 Mikanarr 中点击"新建"
-3. 粘贴 RSS URL 到 Remote 字段
-4. 在右侧预览中选择一个条目，自动填充 Pattern
-5. 手动调整 Pattern，使用 `(?<episode>\\d+)` 标记剧集号
-6. 从下拉框选择 Series 和 Season
-7. 设置 Language、Quality、Offset 等参数
-8. 点击"保存"
-
-### 使用 RSS
-
-将 Mikan 的 RSS URL 中的域名替换为 Mikanarr 的地址：
-
-```
-原: https://mikanani.me/RSS/MyBangumi?token=xxx
-新: https://mikanarr.yourdomain.com/RSS/MyBangumi?token=xxx
-```
-
-将新 URL 添加到 Sonarr 的 RSS Feed 中即可。
-
-### Pattern 示例
-
-```
-Remote: https://mikanani.me/RSS/MyBangumi?token=xxx
-
-Pattern: \[Lilith-Raws\] (.+) - (?<episode>\d+) \[Baha\]\[WEB-DL\]\[1080p\]\[AVC AAC\]\[CHT\]\[MP4\]
-
-Series: 转生为第七王子，随心所欲的魔法学习之路
-Season: 01
-Language: Chinese
-Quality: WEBDL 1080p
-Offset: 0
-ReleaseGroup: Lilith-Raws
-```
-
-## API 端点
-
-### 认证
-
-- `POST /auth/login` - 用户登录
-
-### Patterns
-
-- `GET /api/patterns` - 获取所有 patterns
-- `POST /api/patterns` - 创建 pattern
-- `GET /api/patterns/:id` - 获取单个 pattern
-- `PUT /api/patterns/:id` - 更新 pattern
-- `DELETE /api/patterns/:id` - 删除 pattern
-
-### Sonarr 代理
-
-- `ALL /sonarr/*` - Sonarr API 代理（需认证）
-
-### RSS 转换
-
-- `GET /RSS/*` - RSS 转换端点（Sonarr 使用）
-
-### TMDB 集成
-
-- `GET /tmdb/tv/:id` - 获取剧集信息
-- `GET /tmdb/search` - 搜索剧集
-
-## Docker Compose 示例
+### Docker Compose 部署（推荐）
 
 ```yaml
 version: '3.8'
 
 services:
   mikanarr:
-    image: gitlab.tyo-arm.755022.xyz:5050/sage/mikanarr-refactor:arm64-latest
     container_name: mikanarr
+    image: registry.tyo-arm.755022.xyz/sage/mikanarr-refactor:arm64-latest
+    volumes:
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
     restart: unless-stopped
     ports:
       - "12306:12306"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - PORT=12306
-      - TZ=Asia/Shanghai
+    # 如果使用 Traefik，请参考下面的 labels 配置
+    # networks:
+    #   - traefik
 ```
 
-## 开发
+### 环境变量 (.env)
 
-```bash
-# 安装依赖
-npm install
+| 变量名 | 说明 | 必填 | 示例 |
+|--------|------|------|------|
+| `SONARR_API_KEY` | Sonarr API Key | 是 | `your_sonarr_api_key` |
+| `SONARR_HOST` | Sonarr 内部访问地址 (后端代理使用) | 是 | `http://sonarr:8989` 或 `http://192.168.1.100:8989` |
+| `SONARR_PUBLIC_URL`| Sonarr 外部访问地址 (前端跳转使用) | 否 | `https://sonarr.yourdomain.com` (不填则回退到 HOST) |
+| `TMDB_API_KEY` | TMDB API Key（用于中文信息和图片） | 否 | `your_tmdb_api_key` |
+| `ADMIN_USERNAME` | 管理员用户名 | 是 | `admin` |
+| `ADMIN_PASSWORD` | 管理员密码 | 是 | `your_secure_password` |
+| `PORT` | 服务端口 | 否 | `12306` |
 
-# 开发模式（自动重启）
-npm run dev
+### 高级部署 (Traefik 示例)
 
-# 生产模式
-npm start
+```yaml
+services:
+  mikanarr:
+    # ... image & volumes ...
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.mikanarr.rule=Host(`mikanarr.example.com`)'
+      - 'traefik.http.routers.mikanarr.entrypoints=websecure'
+      - 'traefik.http.routers.mikanarr.tls.certresolver=myresolver'
+      - 'traefik.http.services.mikanarr.loadbalancer.server.port=12306'
+      # 可选：集成 Authentik 或其他外部鉴权
+      # - 'traefik.http.routers.mikanarr.middlewares=authentik@file'
+    networks:
+      - traefik
 ```
 
-## 故障排除
+## 使用指南
 
-### 无法加载 Series
+### 1. 添加新订阅
 
-- 检查 SONARR_API_KEY 和 SONARR_HOST 是否正确
-- 确保 Sonarr 可以从 Mikanarr 所在服务器访问
+1.  复制 Mikan 上的 RSS 链接或番剧详情页链接。
+2.  在 Mikanarr 首页点击「新建」或粘贴链接到导入框点击「解析」。
+3.  系统会自动解析链接，并尝试在 Sonarr 中匹配对应剧集。
+4.  **如果 Sonarr 中已有剧集**：系统会自动选中。
+5.  **如果 Sonarr 中没有剧集**：
+    -   点击系列输入框旁的绿色 `+` 按钮。
+    -   确认搜索词，点击搜索。
+    -   选择正确的剧集，配置根目录和质量，点击「添加」。
+    -   添加成功后，系统会自动选中该剧集。
+6.  调整正则表达式（Pattern），确保能匹配到正确的集数（预览区会显示匹配结果）。
+7.  点击「保存」。
 
-### TMDB 信息不显示
+### 2. 在 Sonarr 中使用
 
-- 检查 TMDB_API_KEY 是否配置
-- 确认 Sonarr 中的 Series 有 tvdbId
+将 Mikan 的 RSS URL 替换为 Mikanarr 生成的代理 URL：
 
-### RSS 预览失败
+```
+原: https://mikanani.me/RSS/Bangumi?bangumiId=xxxx&subgroupid=yyy
+新: https://mikanarr.yourdomain.com/RSS/Bangumi?bangumiId=xxxx&subgroupid=yyy
+```
 
-- 确保 Mikan URL 可以访问
-- 检查 URL 格式是否正确
+在 Sonarr 的 `Settings` -> `Indexers` -> `RSS` 中添加此 URL。
+
+## 常见问题
+
+### 图片加载失败？
+Mikanarr 内置了图片代理服务。如果 Sonarr 或 TMDB 的图片无法直接加载（例如被墙），系统会自动通过后端代理加载图片。请确保服务器端能访问 `artworks.thetvdb.com` 和 `image.tmdb.org`。
+
+### 添加剧集时提示超时？
+这通常是因为网络原因导致 Sonarr 响应慢。我们优化了代理逻辑，支持大体积请求体转发。如果依然失败，请检查 Sonarr 日志。
+
+### 为什么需要 TMDB API Key？
+虽然不是必须的，但配置 TMDB API Key 可以让界面显示剧集的中文名称和海报，极大地提升使用体验。
 
 ## 许可证
 
 ISC
-
-## 原项目
-
-https://gitlab.tyo-arm.755022.xyz/sage/mikanarr
