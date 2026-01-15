@@ -51,6 +51,12 @@ const OIDC_AUTH_URL = process.env.OIDC_AUTH_URL;
 const OIDC_TOKEN_URL = process.env.OIDC_TOKEN_URL;
 const OIDC_REDIRECT_URI = process.env.OIDC_REDIRECT_URI;
 
+router.get('/config', (req, res) => {
+  res.json({
+    oidcEnabled: !!(OIDC_CLIENT_ID && OIDC_AUTH_URL && OIDC_REDIRECT_URI)
+  });
+});
+
 router.get('/oidc/login', (req, res) => {
   if (!OIDC_CLIENT_ID || !OIDC_AUTH_URL || !OIDC_REDIRECT_URI) {
     return res.status(500).send('OIDC not configured');
