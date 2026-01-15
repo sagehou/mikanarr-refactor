@@ -233,10 +233,8 @@ setupEventListeners() {
             if (tmdbResult?.poster_path) {
               const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
               if (img) {
-                // Use image proxy for TMDB image to avoid mixed content/blocking
-                const tmdbUrl = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
-                const token = localStorage.getItem('token');
-                img.src = `/api/image-proxy?url=${encodeURIComponent(tmdbUrl)}&token=${token}`;
+                // Direct TMDB URL
+                img.src = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
               }
             } else {
                // Fallback to Sonarr image if TMDB fails
@@ -268,8 +266,8 @@ setupEventListeners() {
          const host = (this.sonarrHost || '').replace(/\/$/, '');
          posterUrl = `${host}${posterUrl}`;
       } else if (posterUrl.startsWith('http')) {
-        const token = localStorage.getItem('token');
-        posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}&token=${token}`;
+         // Upgrade HTTP to HTTPS
+         posterUrl = posterUrl.replace(/^http:/, 'https:');
       }
       img.src = posterUrl;
     } else {
@@ -382,7 +380,6 @@ setupEventListeners() {
     const payload = {
       title: this.selectedSeries.title,
       qualityProfileId: qualityProfileId,
-      languageProfileId: languageProfileId,
       path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
       tvdbId: this.selectedSeries.tvdbId,
       seasonFolder: seasonFolder,
@@ -394,6 +391,11 @@ setupEventListeners() {
         searchForMissingEpisodes: false
       }
     };
+
+    // Only add languageProfileId if it exists (Sonarr V3)
+    if (languageProfileId) {
+      payload.languageProfileId = languageProfileId;
+    }
 
     const submitBtn = document.getElementById('add-series-submit-btn');
     submitBtn.disabled = true;

@@ -37,6 +37,14 @@ if (!SONARR_API_KEY || !SONARR_HOST) {
     },
     onProxyReq: (proxyReq, req, res) => {
       console.log(`[Sonarr Proxy] ${req.method} ${req.originalUrl} -> ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`);
+      
+      // Fix for body-parser issue: re-stream the body if it was parsed
+      if (req.body && (req.method === 'POST' || req.method === 'PUT')) {
+        const bodyData = JSON.stringify(req.body);
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
+      }
     },
     onError: (err, req, res) => {
       console.error('[Sonarr Proxy] Error:', err.message);
