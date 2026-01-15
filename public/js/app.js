@@ -133,6 +133,9 @@ setupEventListeners() {
       await this.syncTmdbCache(series);
       
       this.renderSeriesOptions(series);
+
+      // Re-render patterns table to show Chinese names
+      this.loadPatterns();
     } catch (error) {
       console.error('[loadSeries] Failed to load series:', error);
       const errorMsg = error.message || 'Unknown error';
@@ -275,10 +278,15 @@ setupEventListeners() {
     tbody.innerHTML = '';
     
     patterns.forEach(pattern => {
+      // Find the series to get tmdbId for Chinese name lookup
+      const series = this.seriesList?.find(s => s.title === pattern.series);
+      const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
+      const displayName = zhName ? `${pattern.series} (${zhName})` : pattern.series;
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${pattern.id}</td>
-        <td><strong>${this.escapeHtml(pattern.series)}</strong></td>
+        <td><strong>${this.escapeHtml(displayName)}</strong></td>
         <td><span class="badge bg-secondary">S${pattern.season}</span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
