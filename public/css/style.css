@@ -41,6 +41,57 @@ body {
   background: linear-gradient(135deg, #b07d62 0%, #8a5a44 100%);
 }
 
+/* Override Bootstrap default colors for Maillard theme */
+.bg-primary {
+  background-color: #8a5a44 !important; /* Deep warm brown */
+  border-color: #8a5a44 !important;
+}
+
+.bg-secondary {
+  background-color: #a69b91 !important; /* Greige */
+  color: #fff;
+}
+
+.bg-success {
+  background-color: #728c69 !important; /* Olive green */
+  color: #fff;
+}
+
+.bg-danger {
+  background-color: #b95c50 !important; /* Rust red */
+  color: #fff;
+}
+
+.bg-warning {
+  background-color: #dcb36b !important; /* Mustard */
+  color: #333;
+}
+
+.bg-info {
+  background-color: #799bae !important; /* Muted blue */
+  color: #fff;
+}
+
+/* Navbar specific override */
+.navbar-dark.bg-primary {
+  background: linear-gradient(to right, #6b4c3e, #8a5a44) !important;
+}
+
+/* Badge styling tweaks */
+.badge {
+  padding: 0.4em 0.65em;
+  font-weight: 500;
+  border-radius: 0.25rem;
+}
+
+/* Dark mode overrides for badges */
+[data-theme="dark"] .bg-secondary { background-color: #5c544e !important; }
+[data-theme="dark"] .bg-success { background-color: #4a5c44 !important; }
+[data-theme="dark"] .bg-danger { background-color: #8a443b !important; }
+[data-theme="dark"] .bg-warning { background-color: #b08d55 !important; }
+[data-theme="dark"] .bg-primary { background-color: #a66d53 !important; }
+
+/* Keep existing styles */
 .login-box {
   background: var(--bg-card);
   padding: 2rem;
