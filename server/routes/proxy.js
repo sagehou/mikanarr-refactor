@@ -27,67 +27,40 @@ router.get('/', async (req, res) => {
     
     let xmlData = response.data;
     
-    // 首先替换空pubDate标签为有效的pubDate
-    xmlData = xmlData.replace(/<pubDate\s*\/>/g, () => {
+    // 处理每个item，将torrent/pubDate移动到item级别
+    const result = xmlData.replace(/<item>([\s\S]*?)<\/item>/g, (match, itemContent) => {
+      // 尝试从torrent元素中提取pubDate
+      const torrentMatch = itemContent.match(/<torrent[^>]*>([\s\S]*?)<\/torrent>/);
+      let pubDate = null;
+      
+      if (torrentMatch) {
+        const torrentContent = torrentMatch[1];
+        const pubDateMatch = torrentContent.match(/<pubDate>([^<]+)<\/pubDate>/);
+        if (pubDateMatch) {
+          pubDate = pubDateMatch[1];
+        }
+      }
+      
+      // 如果找到了pubDate，将它添加到item中（title之后，enclosure之前）
+      if (pubDate) {
+        // 移除torrent元素
+        let newContent = itemContent.replace(/<torrent[^>]*>[\s\S]*?<\/torrent>/g, '');
+        
+        // 在</title>后添加pubDate
+        newContent = newContent.replace(/<\/title>/, `</title><pubDate>${pubDate}</pubDate>`);
+        
+        return `<item>${newContent}</item>`;
+      }
+      
+      // 如果没有pubDate，添加一个
       const now = new Date().toISOString();
-      return `<pubDate>${now}</pubDate>`;
+      let newContent = itemContent.replace(/<\/title>/, `</title><pubDate>${now}</pubDate>`);
+      
+      return `<item>${newContent}</item>`;
     });
     
-    // 检查是否还有item缺少pubDate
-    const items = xmlData.split('<item>');
-    let needsUpdate = false;
-    
-    for (let i = 1; i < items.length; i++) {
-      const item = items[i];
-      const itemEnd = item.lastIndexOf('</item>');
-      if (itemEnd === -1) continue;
-      
-      const itemContent = item.substring(0, itemEnd);
-      
-      // 检查是否有完整的pubDate元素
-      if (!itemContent.includes('<pubDate>')) {
-        needsUpdate = true;
-        break;
-      }
-    }
-    
-    // 如果所有items都有pubDate，直接返回处理后的数据
-    if (!needsUpdate) {
-      console.log('[Mikan Proxy] All items have pubDate, returning XML');
-      res.set('Content-Type', 'application/xml');
-      res.send(xmlData);
-      return;
-    }
-    
-    // 需要更新，逐个处理items
-    console.log('[Mikan Proxy] Adding missing pubDate elements');
-    const updatedItems = items.map((item, index) => {
-      if (index === 0) return item; // RSS头
-      
-      const itemEnd = item.lastIndexOf('</item>');
-      if (itemEnd === -1) return item;
-      
-      const itemContent = item.substring(0, itemEnd);
-      const remainingContent = item.substring(itemEnd);
-      
-      // 检查是否有完整的pubDate元素
-      if (itemContent.includes('<pubDate>')) {
-        return `<item>${item}`;
-      }
-      
-      // 在title元素后添加pubDate
-      const titleEnd = itemContent.indexOf('</title>');
-      if (titleEnd !== -1) {
-        const now = new Date().toISOString();
-        return `<item>${itemContent.substring(0, titleEnd + 9)}<pubDate>${now}</pubDate>${itemContent.substring(titleEnd + 9)}${remainingContent}`;
-      }
-      
-      return `<item>${item}`;
-    });
-    
-    const updatedXml = updatedItems.join('<item>');
     res.set('Content-Type', 'application/xml');
-    res.send(updatedXml);
+    res.send(result);
     
   } catch (error) {
     const axiosError = error;
