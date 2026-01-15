@@ -235,12 +235,26 @@ setupEventListeners() {
     try {
       const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
       const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
       const patterns = await response.json();
-      this.allPatterns = patterns; // 保存所有 patterns
+      
+      if (!Array.isArray(patterns)) {
+        console.error('[loadPatterns] Expected array but got:', patterns);
+        this.allPatterns = [];
+      } else {
+        this.allPatterns = patterns;
+      }
+      
       this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
     } catch (error) {
       console.error('Failed to load patterns:', error);
+      this.allPatterns = [];
+      this.renderPatterns([]);
     }
   }
 
