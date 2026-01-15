@@ -187,28 +187,13 @@ setupEventListeners() {
         const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
         const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
         
-        let posterUrl = series.images.find(i => i.coverType === 'poster')?.remoteUrl || 
-                        series.images.find(i => i.coverType === 'poster')?.url;
-                        
-        if (posterUrl) {
-          // If relative path, prepend Sonarr host
-          if (posterUrl.startsWith('/')) {
-             const host = (this.sonarrHost || '').replace(/\/$/, '');
-             posterUrl = `${host}${posterUrl}`;
-          }
-          // Use image proxy for remote URLs to avoid timeout/mixed content issues
-          else if (posterUrl.startsWith('http')) {
-            const token = localStorage.getItem('token');
-            posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}&token=${token}`;
-          }
-        } else {
-          posterUrl = 'https://via.placeholder.com/60x90';
-        }
+        // Placeholder ID for lazy loading
+        const imgId = `img-tvdb-${series.tvdbId}`;
         
         return `
           <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
             onclick="app.selectSeriesToAdd(${this.escapeHtml(JSON.stringify(series))})" ${exists ? 'disabled' : ''}>
-            <img src="${posterUrl}" class="rounded me-3" width="40" height="60" style="object-fit: cover;" loading="lazy" onerror="this.src='https://via.placeholder.com/60x90?text=No+Img'">
+            <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
             <div>
               <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
               <small class="text-muted">TVDB: ${series.tvdbId} | ${series.network || 'Unknown'}</small>
@@ -216,9 +201,60 @@ setupEventListeners() {
           </button>
         `;
       }).join('');
+
+      // Lazy load TMDB images
+      results.forEach(async series => {
+        if (!series.tvdbId) return;
+        try {
+          // Use our own TMDB proxy
+          const response = await this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`);
+          if (response.ok) {
+            const data = await response.json();
+            const tmdbResult = data.tv_results?.[0];
+            if (tmdbResult?.poster_path) {
+              const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
+              if (img) {
+                // Use image proxy for TMDB image to avoid mixed content/blocking
+                const tmdbUrl = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
+                const token = localStorage.getItem('token');
+                img.src = `/api/image-proxy?url=${encodeURIComponent(tmdbUrl)}&token=${token}`;
+              }
+            } else {
+               // Fallback to Sonarr image if TMDB fails
+               this.loadSonarrImage(series);
+            }
+          } else {
+             this.loadSonarrImage(series);
+          }
+        } catch (e) {
+          this.loadSonarrImage(series);
+        }
+      });
+
     } catch (error) {
       console.error('[searchSonarrSeries] Error:', error);
       resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
+    }
+  }
+
+  loadSonarrImage(series) {
+    const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
+    if (!img) return;
+
+    let posterUrl = series.images.find(i => i.coverType === 'poster')?.remoteUrl || 
+                    series.images.find(i => i.coverType === 'poster')?.url;
+                    
+    if (posterUrl) {
+      if (posterUrl.startsWith('/')) {
+         const host = (this.sonarrHost || '').replace(/\/$/, '');
+         posterUrl = `${host}${posterUrl}`;
+      } else if (posterUrl.startsWith('http')) {
+        const token = localStorage.getItem('token');
+        posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}&token=${token}`;
+      }
+      img.src = posterUrl;
+    } else {
+      img.src = 'https://via.placeholder.com/60x90?text=No+Img';
     }
   }
 

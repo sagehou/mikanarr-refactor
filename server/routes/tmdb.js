@@ -123,23 +123,24 @@ router.get('/tv/:id', async (req, res) => {
 });
 
 router.get('/search', async (req, res) => {
+  // ... existing search logic ...
+});
+
+router.get('/find/:id', async (req, res) => {
   if (!TMDB_API_KEY) {
     return res.status(503).json({ error: 'TMDB not configured' });
   }
   
-  const { query, language = 'zh-CN' } = req.query;
-  
-  if (!query) {
-    return res.status(400).json({ error: 'Query parameter required' });
-  }
+  const { id } = req.params; // External ID (e.g. TVDB ID)
+  const { source = 'tvdb_id', language = 'zh-CN' } = req.query;
   
   try {
     const response = await axios.get(
-      `https://api.themoviedb.org/3/search/tv`,
+      `https://api.themoviedb.org/3/find/${id}`,
       {
         params: {
           api_key: TMDB_API_KEY,
-          query,
+          external_source: source,
           language
         }
       }
