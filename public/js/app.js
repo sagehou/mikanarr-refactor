@@ -186,12 +186,23 @@ setupEventListeners() {
         // Check if already exists
         const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
         const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
-        const posterUrl = series.images.find(i => i.coverType === 'poster')?.url || 'https://via.placeholder.com/60x90';
+        
+        let posterUrl = series.images.find(i => i.coverType === 'poster')?.remoteUrl || 
+                        series.images.find(i => i.coverType === 'poster')?.url;
+                        
+        if (posterUrl) {
+          // Upgrade HTTP to HTTPS to avoid mixed content
+          if (posterUrl.startsWith('http:')) {
+            posterUrl = posterUrl.replace('http:', 'https:');
+          }
+        } else {
+          posterUrl = 'https://via.placeholder.com/60x90';
+        }
         
         return `
           <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
             onclick="app.selectSeriesToAdd(${this.escapeHtml(JSON.stringify(series))})" ${exists ? 'disabled' : ''}>
-            <img src="${posterUrl}" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
+            <img src="${posterUrl}" class="rounded me-3" width="40" height="60" style="object-fit: cover;" loading="lazy" onerror="this.src='https://via.placeholder.com/60x90?text=No+Img'">
             <div>
               <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
               <small class="text-muted">TVDB: ${series.tvdbId} | ${series.network || 'Unknown'}</small>
