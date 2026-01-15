@@ -675,6 +675,11 @@ setupEventListeners() {
       }
       
       document.getElementById('remote').value = remoteUrl;
+      
+      // Reset series selection to trigger auto-match
+      document.getElementById('series').value = '';
+      this.loadSeasons(); // Clear seasons
+      
       this.loadRssPreview();
       
       // Clear input
