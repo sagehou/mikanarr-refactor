@@ -194,9 +194,14 @@
                     <div class="row mb-3">
                       <div class="col-md-6">
                         <label for="series" class="form-label">系列</label>
-                        <select class="form-select" id="series" required>
-                          <option value="">选择系列...</option>
-                        </select>
+                        <div class="input-group">
+                          <select class="form-select" id="series" required>
+                            <option value="">选择系列...</option>
+                          </select>
+                          <button class="btn btn-outline-success" type="button" id="form-add-series-btn" title="在Sonarr中添加新剧集">
+                            <i class="bi bi-plus-lg"></i>
+                          </button>
+                        </div>
                       </div>
                       <div class="col-md-6">
                         <label for="season" class="form-label">季度</label>

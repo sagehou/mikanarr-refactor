@@ -93,6 +93,25 @@ setupEventListeners() {
     // Mikan导入
     document.getElementById('import-mikan-btn').addEventListener('click', () => this.importFromMikan());
     
+    // 表单中添加剧集按钮
+    document.getElementById('form-add-series-btn').addEventListener('click', () => {
+      // 尝试自动填充搜索词：如果有自动匹配结果但未存在，或者是当前RSS标题
+      let initialQuery = '';
+      const rssFirstTitle = this.rssItems.length > 0 ? this.rssItems[0] : '';
+      if (rssFirstTitle) {
+        // Simple extraction or use findBestMatchSeries logic logic to extract title
+        // But findBestMatchSeries returns a sonarr series object, which we don't have here.
+        // So we just try to clean up the title.
+        initialQuery = rssFirstTitle
+          .replace(/^\[.*?\]\s*/, '')
+          .replace(/\s*-\s*\d+.*$/, '')
+          .replace(/\s*S\d+E\d+.*$/, '')
+          .replace(/\s*第\d+话.*/, '')
+          .trim();
+      }
+      this.showAddSeriesModal(initialQuery);
+    });
+
     // 批量操作
     document.getElementById('select-all').addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
     document.getElementById('batch-delete-btn').addEventListener('click', () => this.batchDelete());
@@ -325,6 +344,14 @@ setupEventListeners() {
       
       // Reload series list
       await this.loadSeries();
+      
+      // Automatically select the newly added series
+      const seriesSelect = document.getElementById('series');
+      if (seriesSelect) {
+        seriesSelect.value = this.selectedSeries.title;
+        // Trigger change event to load seasons
+        seriesSelect.dispatchEvent(new Event('change'));
+      }
       
       // Show success message
       const toast = document.createElement('div');
