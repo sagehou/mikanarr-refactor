@@ -176,10 +176,11 @@ setupEventListeners() {
     console.log('[renderSeriesOptions] Series options added to select element');
   }
 
-  async loadSeasons() {
+  async loadSeasons(targetSeason = null) {
     const seriesTitle = document.getElementById('series').value;
     const seasonSelect = document.getElementById('season');
-    const currentSeason = seasonSelect.value; // 保存当前选中的季度
+    // 优先使用传入的目标季度，否则使用当前选中的季度
+    const currentSeason = targetSeason || seasonSelect.value;
     
     seasonSelect.innerHTML = '<option value="">选择季度...</option>';
 
@@ -359,14 +360,13 @@ setupEventListeners() {
       document.getElementById('remote').value = pattern.remote || '';
       document.getElementById('pattern').value = pattern.pattern;
       document.getElementById('series').value = pattern.series;
-      document.getElementById('season').value = pattern.season;
       document.getElementById('language').value = pattern.language;
       document.getElementById('quality').value = pattern.quality;
       document.getElementById('offset').value = pattern.offset || 0;
       document.getElementById('releasegroup').value = pattern.releasegroup || '';
       
-      // Load seasons after setting series value
-      this.loadSeasons();
+      // Load seasons after setting series value, pass the saved season to restore
+      this.loadSeasons(pattern.season);
       this.updateProxyUrl();
     } else {
       console.log('[showPatternEdit] Creating new pattern');
