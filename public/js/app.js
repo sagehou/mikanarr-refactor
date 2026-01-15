@@ -1,6 +1,7 @@
 class MikanarrApp {
   constructor() {
     this.token = localStorage.getItem('token');
+    window.app = this; // Expose app instance for onclick handlers
     this.currentPatternId = null;
     this.seriesList = [];
     this.rssItems = [];
@@ -107,10 +108,93 @@ setupEventListeners() {
     // Pattern测试按钮
     document.getElementById('test-pattern-btn').addEventListener('click', () => this.testPattern());
     
+    // Add Series Modal Events
+    document.getElementById('sonarr-search-btn').addEventListener('click', () => this.searchSonarrSeries());
+    document.getElementById('sonarr-search-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') this.searchSonarrSeries();
+    });
+    document.getElementById('add-series-back-btn').addEventListener('click', () => {
+      document.getElementById('add-series-step-2').classList.add('d-none');
+      document.getElementById('add-series-step-1').classList.remove('d-none');
+      document.getElementById('add-series-submit-btn').disabled = true;
+      document.getElementById('add-series-back-btn').disabled = true;
+    });
+    document.getElementById('add-series-submit-btn').addEventListener('click', () => this.submitAddSeries());
+
     // 添加表头排序事件监听
     document.querySelectorAll('.sortable').forEach(th => {
       th.addEventListener('click', () => this.handleSortClick(th));
     });
+  }
+
+  // Add Series Logic
+  showAddSeriesModal(initialQuery = '') {
+    const modal = new bootstrap.Modal(document.getElementById('add-series-modal'));
+    document.getElementById('sonarr-search-input').value = initialQuery;
+    document.getElementById('sonarr-search-results').innerHTML = '';
+    document.getElementById('add-series-step-1').classList.remove('d-none');
+    document.getElementById('add-series-step-2').classList.add('d-none');
+    document.getElementById('add-series-submit-btn').disabled = true;
+    document.getElementById('add-series-back-btn').disabled = true;
+    
+    modal.show();
+    this.loadSonarrOptions(); // Ensure options are loaded
+    
+    if (initialQuery) {
+      this.searchSonarrSeries();
+    }
+  }
+
+  async searchSonarrSeries() {
+    const query = document.getElementById('sonarr-search-input').value.trim();
+    if (!query) return;
+
+    const resultsDiv = document.getElementById('sonarr-search-results');
+    resultsDiv.innerHTML = '<div class="text-center p-3"><div class="loading-spinner"></div> 搜索中...</div>';
+
+    try {
+      const response = await this.apiRequest(`/sonarr/api/v3/series/lookup?term=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('搜索失败');
+      
+      const results = await response.json();
+      
+      if (!results || results.length === 0) {
+        resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
+        return;
+      }
+
+      resultsDiv.innerHTML = results.map(series => {
+        // Check if already exists
+        const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
+        const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
+        const posterUrl = series.images.find(i => i.coverType === 'poster')?.url || 'https://via.placeholder.com/60x90';
+        
+        return `
+          <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
+            onclick="app.selectSeriesToAdd(${this.escapeHtml(JSON.stringify(series))})" ${exists ? 'disabled' : ''}>
+            <img src="${posterUrl}" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
+            <div>
+              <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
+              <small class="text-muted">TVDB: ${series.tvdbId} | ${series.network || 'Unknown'}</small>
+            </div>
+          </button>
+        `;
+      }).join('');
+    } catch (error) {
+      console.error('[searchSonarrSeries] Error:', error);
+      resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
+    }
+  }
+
+  selectSeriesToAdd(series) {
+    this.selectedSeries = series;
+    document.getElementById('selected-series-title').textContent = `${series.title} (${series.year})`;
+    document.getElementById('selected-tvdb-id').value = series.tvdbId;
+    
+    document.getElementById('add-series-step-1').classList.add('d-none');
+    document.getElementById('add-series-step-2').classList.remove('d-none');
+    document.getElementById('add-series-submit-btn').disabled = false;
+    document.getElementById('add-series-back-btn').disabled = false;
   }
 
   async handleLogin(e) {
@@ -166,6 +250,128 @@ setupEventListeners() {
 
   // TMDB中文名缓存 { tmdbId: titleZh }
   tmdbCache = {};
+  
+  // Sonarr 配置缓存
+  sonarrOptions = {
+    rootFolders: [],
+    qualityProfiles: [],
+    languageProfiles: []
+  };
+
+  async submitAddSeries() {
+    if (!this.selectedSeries) return;
+
+    const rootPath = document.getElementById('sonarr-root-folder').value;
+    const qualityProfileId = parseInt(document.getElementById('sonarr-quality-profile').value);
+    const languageProfileId = parseInt(document.getElementById('sonarr-language-profile').value);
+    const seriesType = document.getElementById('sonarr-series-type').value;
+    const monitor = document.getElementById('sonarr-monitor').value;
+    const seasonFolder = document.getElementById('sonarr-season-folder').checked;
+
+    if (!rootPath || !qualityProfileId) {
+      alert('请填写所有必填项');
+      return;
+    }
+
+    const payload = {
+      title: this.selectedSeries.title,
+      qualityProfileId: qualityProfileId,
+      languageProfileId: languageProfileId,
+      path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
+      tvdbId: this.selectedSeries.tvdbId,
+      seasonFolder: seasonFolder,
+      monitored: monitor !== 'none',
+      seriesType: seriesType,
+      images: this.selectedSeries.images,
+      addOptions: {
+        monitor: monitor,
+        searchForMissingEpisodes: false
+      }
+    };
+
+    const submitBtn = document.getElementById('add-series-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '添加中...';
+
+    try {
+      const response = await this.apiRequest('/sonarr/api/v3/series', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || JSON.stringify(errorData));
+      }
+
+      // Success
+      const modal = bootstrap.Modal.getInstance(document.getElementById('add-series-modal'));
+      modal.hide();
+      
+      // Reload series list
+      await this.loadSeries();
+      
+      // Show success message
+      const toast = document.createElement('div');
+      toast.className = 'position-fixed bottom-0 end-0 p-3';
+      toast.innerHTML = `<div class="toast show bg-success text-white"><div class="toast-body">成功添加剧集: ${this.escapeHtml(this.selectedSeries.title)}</div></div>`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+
+    } catch (error) {
+      console.error('[submitAddSeries] Error:', error);
+      alert('添加失败: ' + error.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '添加';
+    }
+  }
+
+  async loadSonarrOptions() {
+    if (this.sonarrOptions.rootFolders.length > 0) return; // 已加载
+
+    try {
+      const [rootFolders, qualityProfiles, languageProfiles] = await Promise.all([
+        this.apiRequest('/sonarr/api/v3/rootfolder').then(r => r.json()),
+        this.apiRequest('/sonarr/api/v3/qualityprofile').then(r => r.json()),
+        this.apiRequest('/sonarr/api/v3/languageprofile').then(r => r.json()).catch(() => []) // Optional or deprecated in v4
+      ]);
+
+      this.sonarrOptions = { rootFolders, qualityProfiles, languageProfiles };
+      this.renderSonarrOptions();
+    } catch (error) {
+      console.error('[loadSonarrOptions] Failed:', error);
+      alert('无法加载 Sonarr 配置，请检查连接');
+    }
+  }
+
+  renderSonarrOptions() {
+    const rootSelect = document.getElementById('sonarr-root-folder');
+    const qualitySelect = document.getElementById('sonarr-quality-profile');
+    const languageSelect = document.getElementById('sonarr-language-profile');
+
+    rootSelect.innerHTML = '<option value="">选择路径...</option>' + 
+      this.sonarrOptions.rootFolders.map(f => `<option value="${f.path}">${f.path} (${this.formatBytes(f.freeSpace)} Free)</option>`).join('');
+
+    qualitySelect.innerHTML = this.sonarrOptions.qualityProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    
+    // 如果没有语言配置（Sonarr V4），可能需要隐藏该字段或使用默认值
+    if (this.sonarrOptions.languageProfiles.length > 0) {
+      languageSelect.innerHTML = this.sonarrOptions.languageProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    } else {
+      languageSelect.innerHTML = '<option value="1">English (Default)</option>';
+    }
+  }
+
+  formatBytes(bytes, decimals = 2) {
+    if (!+bytes) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+  }
 
   async loadSeries() {
     try {
@@ -351,10 +557,17 @@ setupEventListeners() {
       let matchStatus = '';
       let matchIcon = '';
       let fixBtn = '';
+      let addBtn = ''; // Button to add series to Sonarr
+      
       if (!series) {
         // Series not found in Sonarr at all
         matchStatus = 'not-found';
         matchIcon = '<i class="bi bi-exclamation-circle text-danger" title="Sonarr中未找到此系列"></i> ';
+        
+        // Add "Add Series" button
+        addBtn = `<button class="btn btn-sm btn-outline-success btn-add-series" data-query="${this.escapeHtml(pattern.series)}" title="搜索并添加到 Sonarr">
+            <i class="bi bi-plus-circle"></i>
+          </button>`;
       } else if (series.title !== pattern.series) {
         // Found but case doesn't match exactly - might need update
         matchStatus = 'case-mismatch';
@@ -403,6 +616,7 @@ setupEventListeners() {
         <td class="text-nowrap">
           ${copyUrlBtn}
           ${sonarrBtn}
+          ${addBtn}
           ${fixBtn}
           <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}">
             <i class="bi bi-pencil"></i>
@@ -428,6 +642,10 @@ setupEventListeners() {
         parseInt(e.currentTarget.dataset.id),
         e.currentTarget.dataset.correctName
       ));
+    });
+
+    tbody.querySelectorAll('.btn-add-series').forEach(btn => {
+      btn.addEventListener('click', (e) => this.showAddSeriesModal(e.currentTarget.dataset.query));
     });
 
     tbody.querySelectorAll('.btn-copy-url').forEach(btn => {
