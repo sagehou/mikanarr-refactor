@@ -9,6 +9,7 @@ const proxyRoutes = require('./routes/proxy');
 const sonarrRoutes = require('./routes/sonarr');
 const rssRoutes = require('./routes/rss');
 const tmdbRoutes = require('./routes/tmdb');
+const imageProxyRoutes = require('./routes/imageProxy');
 const { verifyToken } = require('./routes/auth');
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/proxy', proxyRoutes);
 app.use('/sonarr', sonarrRoutes);
 app.use('/RSS', rssRoutes);
 app.use('/tmdb', tmdbRoutes);
+app.use('/api/image-proxy', imageProxyRoutes);
 
 // Catch-all for static files and SPA routing (only for non-API requests)
 app.get('*', (req, res, next) => {

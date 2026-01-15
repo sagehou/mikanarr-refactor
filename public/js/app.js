@@ -196,9 +196,9 @@ setupEventListeners() {
              const host = (this.sonarrHost || '').replace(/\/$/, '');
              posterUrl = `${host}${posterUrl}`;
           }
-          // Upgrade HTTP to HTTPS to avoid mixed content
-          else if (posterUrl.startsWith('http:')) {
-            posterUrl = posterUrl.replace('http:', 'https:');
+          // Use image proxy for remote URLs to avoid timeout/mixed content issues
+          else if (posterUrl.startsWith('http')) {
+            posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}`;
           }
         } else {
           posterUrl = 'https://via.placeholder.com/60x90';
