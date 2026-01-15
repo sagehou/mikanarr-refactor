@@ -175,34 +175,42 @@ setupEventListeners() {
       const response = await this.apiRequest(`/sonarr/api/v3/series/lookup?term=${encodeURIComponent(query)}`);
       if (!response.ok) throw new Error('搜索失败');
       
-      const results = await response.json();
+      const allResults = await response.json();
+      // Store results for selection
+      this.searchResults = allResults;
+      const results = allResults.slice(0, 10);
       
       if (!results || results.length === 0) {
         resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
         return;
       }
 
-      resultsDiv.innerHTML = results.map(series => {
+      resultsDiv.innerHTML = results.map((series, index) => {
         // Check if already exists
         const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
         const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
         
         // Placeholder ID for lazy loading
         const imgId = `img-tvdb-${series.tvdbId}`;
+        const tmdbIdSpan = `tmdb-id-${series.tvdbId}`;
         
         return `
           <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
-            onclick="app.selectSeriesToAdd(${this.escapeHtml(JSON.stringify(series))})" ${exists ? 'disabled' : ''}>
+            onclick="app.selectSeriesToAdd(${index})" ${exists ? 'disabled' : ''}>
             <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
             <div>
               <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
-              <small class="text-muted">TVDB: ${series.tvdbId} | ${series.network || 'Unknown'}</small>
+              <small class="text-muted">
+                TVDB: ${series.tvdbId} 
+                <span id="${tmdbIdSpan}">${series.tmdbId ? `| TMDB: ${series.tmdbId}` : ''}</span>
+                | ${series.network || 'Unknown'}
+              </small>
             </div>
           </button>
         `;
       }).join('');
 
-      // Lazy load TMDB images
+      // Lazy load TMDB images and info
       results.forEach(async series => {
         if (!series.tvdbId) return;
         try {
@@ -211,6 +219,17 @@ setupEventListeners() {
           if (response.ok) {
             const data = await response.json();
             const tmdbResult = data.tv_results?.[0];
+            
+            // Update TMDB ID if found
+            if (tmdbResult?.id) {
+              const tmdbSpan = document.getElementById(`tmdb-id-${series.tvdbId}`);
+              if (tmdbSpan) {
+                tmdbSpan.textContent = `| TMDB: ${tmdbResult.id}`;
+                // Update cached result object with TMDB ID so we have it later
+                series.tmdbId = tmdbResult.id;
+              }
+            }
+
             if (tmdbResult?.poster_path) {
               const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
               if (img) {
@@ -258,7 +277,8 @@ setupEventListeners() {
     }
   }
 
-  selectSeriesToAdd(series) {
+  selectSeriesToAdd(index) {
+    const series = this.searchResults[index];
     this.selectedSeries = series;
     document.getElementById('selected-series-title').textContent = `${series.title} (${series.year})`;
     document.getElementById('selected-tvdb-id').value = series.tvdbId;
