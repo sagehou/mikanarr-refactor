@@ -24,6 +24,11 @@ class MikanarrApp {
         const config = await response.json();
         console.log('[OIDC] Config:', config);
         if (config.oidcEnabled) {
+          if (config.oidcAutoLogin) {
+            console.log('[OIDC] Auto-login enabled, redirecting...');
+            window.location.href = '/auth/oidc/login';
+            return;
+          }
           const container = document.getElementById('oidc-login-container');
           if (container) {
             container.classList.remove('d-none');

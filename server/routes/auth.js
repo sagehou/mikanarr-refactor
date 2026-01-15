@@ -50,10 +50,12 @@ const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
 const OIDC_AUTH_URL = process.env.OIDC_AUTH_URL;
 const OIDC_TOKEN_URL = process.env.OIDC_TOKEN_URL;
 const OIDC_REDIRECT_URI = process.env.OIDC_REDIRECT_URI;
+const OIDC_AUTO_LOGIN = process.env.OIDC_AUTO_LOGIN === 'true';
 
 router.get('/config', (req, res) => {
   res.json({
-    oidcEnabled: !!(OIDC_CLIENT_ID && OIDC_AUTH_URL && OIDC_REDIRECT_URI)
+    oidcEnabled: !!(OIDC_CLIENT_ID && OIDC_AUTH_URL && OIDC_REDIRECT_URI),
+    oidcAutoLogin: OIDC_AUTO_LOGIN
   });
 });
 
