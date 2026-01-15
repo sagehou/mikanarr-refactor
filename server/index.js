@@ -27,8 +27,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Config API - expose Sonarr host for frontend
 app.get('/api/config', verifyToken, (req, res) => {
+  // Return public URL for frontend links, fallback to internal host
   res.json({
-    sonarrHost: process.env.SONARR_HOST || ''
+    sonarrHost: process.env.SONARR_PUBLIC_URL || process.env.SONARR_HOST || ''
   });
 });
 
