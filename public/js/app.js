@@ -22,9 +22,15 @@ class MikanarrApp {
       const response = await fetch('/auth/config');
       if (response.ok) {
         const config = await response.json();
+        console.log('[OIDC] Config:', config);
         if (config.oidcEnabled) {
           const container = document.getElementById('oidc-login-container');
-          if (container) container.classList.remove('d-none');
+          if (container) {
+            container.classList.remove('d-none');
+            console.log('[OIDC] SSO button enabled');
+          } else {
+            console.error('[OIDC] Button container not found');
+          }
         }
       }
     } catch (e) {
