@@ -191,8 +191,13 @@ setupEventListeners() {
                         series.images.find(i => i.coverType === 'poster')?.url;
                         
         if (posterUrl) {
+          // If relative path, prepend Sonarr host
+          if (posterUrl.startsWith('/')) {
+             const host = (this.sonarrHost || '').replace(/\/$/, '');
+             posterUrl = `${host}${posterUrl}`;
+          }
           // Upgrade HTTP to HTTPS to avoid mixed content
-          if (posterUrl.startsWith('http:')) {
+          else if (posterUrl.startsWith('http:')) {
             posterUrl = posterUrl.replace('http:', 'https:');
           }
         } else {
