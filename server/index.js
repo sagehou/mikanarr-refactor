@@ -16,13 +16,20 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '12306');
 
 app.use(cors());
-app.use(express.json());
 
 // 设置Permissions-Policy头，移除不支持的特性
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', '');
   next();
 });
+
+// Proxy routes (MUST be before body parser)
+app.use('/sonarr', sonarrRoutes);
+app.use('/proxy', proxyRoutes);
+app.use('/api/image-proxy', imageProxyRoutes);
+
+// Body parser for other routes
+app.use(express.json());
 
 app.use(express.static(path.join(__dirname, '../public')));
 
