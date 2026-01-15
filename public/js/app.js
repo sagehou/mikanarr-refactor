@@ -178,75 +178,111 @@ setupEventListeners() {
       const allResults = await response.json();
       // Store results for selection
       this.searchResults = allResults;
-      const results = allResults.slice(0, 10);
+      this.currentSearchPage = 1;
+      this.renderSearchResults();
       
-      if (!results || results.length === 0) {
-        resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
-        return;
-      }
+    } catch (error) {
+      console.error('[searchSonarrSeries] Error:', error);
+      resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
+    }
+  }
 
-      resultsDiv.innerHTML = results.map((series, index) => {
-        // Check if already exists
-        const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
-        const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
-        
-        // Placeholder ID for lazy loading
-        const imgId = `img-tvdb-${series.tvdbId}`;
-        const tmdbIdSpan = `tmdb-id-${series.tvdbId}`;
-        
-        return `
-          <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
-            onclick="app.selectSeriesToAdd(${index})" ${exists ? 'disabled' : ''}>
-            <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
-            <div>
-              <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
-              <small class="text-muted">
-                TVDB: ${series.tvdbId} 
-                <span id="${tmdbIdSpan}">${series.tmdbId ? `| TMDB: ${series.tmdbId}` : ''}</span>
-                | ${series.network || 'Unknown'}
-              </small>
-            </div>
+  renderSearchResults() {
+    const resultsDiv = document.getElementById('sonarr-search-results');
+    const pageSize = 10;
+    const start = 0;
+    const end = this.currentSearchPage * pageSize;
+    const results = this.searchResults.slice(start, end);
+    const hasMore = this.searchResults.length > end;
+
+    if (!results || results.length === 0) {
+      resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
+      return;
+    }
+
+    let html = results.map((series, index) => {
+      // Check if already exists
+      const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
+      const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
+      
+      // Placeholder ID for lazy loading
+      const imgId = `img-tvdb-${series.tvdbId}`;
+      const tmdbIdSpan = `tmdb-id-${series.tvdbId}`;
+      
+      return `
+        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
+          onclick="app.selectSeriesToAdd(${index})" ${exists ? 'disabled' : ''}>
+          <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
+          <div>
+            <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
+            <small class="text-muted">
+              TVDB: ${series.tvdbId} 
+              <span id="${tmdbIdSpan}">${series.tmdbId ? `| TMDB: ${series.tmdbId}` : ''}</span>
+              | ${series.network || 'Unknown'}
+            </small>
+          </div>
+        </button>
+      `;
+    }).join('');
+
+    if (hasMore) {
+      html += `
+        <div class="text-center p-2">
+          <button class="btn btn-sm btn-outline-primary w-100" onclick="app.loadMoreSearchResults()">
+            加载更多
           </button>
-        `;
-      }).join('');
+        </div>
+      `;
+    }
 
-      // Lazy load TMDB images and info
-      results.forEach(async series => {
-        if (!series.tvdbId) return;
-        try {
-          // Use our own TMDB proxy
-          const response = await this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`);
-          if (response.ok) {
-            const data = await response.json();
-            const tmdbResult = data.tv_results?.[0];
-            
-            // Update TMDB ID if found
-            if (tmdbResult?.id) {
-              const tmdbSpan = document.getElementById(`tmdb-id-${series.tvdbId}`);
-              if (tmdbSpan) {
-                tmdbSpan.textContent = `| TMDB: ${tmdbResult.id}`;
-                // Update cached result object with TMDB ID so we have it later
-                series.tmdbId = tmdbResult.id;
-              }
+    resultsDiv.innerHTML = html;
+
+    // Lazy load TMDB images and info for newly rendered items
+    // We only need to load for the items that haven't been loaded yet, or just re-run for all visible (simpler)
+    // To optimize, we could track loaded IDs, but re-running is okay as long as we check if img src is already set (not placeholder)
+    
+    results.forEach(async series => {
+      if (!series.tvdbId) return;
+      const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
+      if (!img || !img.src.includes('placeholder')) return; // Skip if already loaded
+
+      try {
+        // Use our own TMDB proxy
+        const response = await this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`);
+        if (response.ok) {
+          const data = await response.json();
+          const tmdbResult = data.tv_results?.[0];
+          
+          // Update TMDB ID if found
+          if (tmdbResult?.id) {
+            const tmdbSpan = document.getElementById(`tmdb-id-${series.tvdbId}`);
+            if (tmdbSpan) {
+              tmdbSpan.textContent = `| TMDB: ${tmdbResult.id}`;
+              series.tmdbId = tmdbResult.id;
             }
+          }
 
-            if (tmdbResult?.poster_path) {
-              const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
-              if (img) {
-                // Direct TMDB URL
-                img.src = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
-              }
-            } else {
-               // Fallback to Sonarr image if TMDB fails
-               this.loadSonarrImage(series);
+          if (tmdbResult?.poster_path) {
+            if (img) {
+              // Direct TMDB URL
+              img.src = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
             }
           } else {
              this.loadSonarrImage(series);
           }
-        } catch (e) {
-          this.loadSonarrImage(series);
+        } else {
+           this.loadSonarrImage(series);
         }
-      });
+      } catch (e) {
+        this.loadSonarrImage(series);
+      }
+    });
+  }
+
+  loadMoreSearchResults() {
+    this.currentSearchPage++;
+    this.renderSearchResults();
+  }
 
     } catch (error) {
       console.error('[searchSonarrSeries] Error:', error);
@@ -367,7 +403,7 @@ setupEventListeners() {
 
     const rootPath = document.getElementById('sonarr-root-folder').value;
     const qualityProfileId = parseInt(document.getElementById('sonarr-quality-profile').value);
-    const languageProfileId = parseInt(document.getElementById('sonarr-language-profile').value);
+    // Removed languageProfileId
     const seriesType = document.getElementById('sonarr-series-type').value;
     const monitor = document.getElementById('sonarr-monitor').value;
     const seasonFolder = document.getElementById('sonarr-season-folder').checked;
@@ -378,6 +414,21 @@ setupEventListeners() {
     }
 
     const payload = {
+      title: this.selectedSeries.title,
+      qualityProfileId: qualityProfileId,
+      path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
+      tvdbId: this.selectedSeries.tvdbId,
+      seasonFolder: seasonFolder,
+      monitored: monitor !== 'none',
+      seriesType: seriesType,
+      images: this.selectedSeries.images,
+      addOptions: {
+        monitor: monitor,
+        searchForMissingEpisodes: false
+      }
+    };
+
+    // Removed languageProfileId addition logic
       title: this.selectedSeries.title,
       qualityProfileId: qualityProfileId,
       path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
@@ -448,13 +499,12 @@ setupEventListeners() {
     if (this.sonarrOptions.rootFolders.length > 0) return; // 已加载
 
     try {
-      const [rootFolders, qualityProfiles, languageProfiles] = await Promise.all([
+      const [rootFolders, qualityProfiles] = await Promise.all([
         this.apiRequest('/sonarr/api/v3/rootfolder').then(r => r.json()),
-        this.apiRequest('/sonarr/api/v3/qualityprofile').then(r => r.json()),
-        this.apiRequest('/sonarr/api/v3/languageprofile').then(r => r.json()).catch(() => []) // Optional or deprecated in v4
+        this.apiRequest('/sonarr/api/v3/qualityprofile').then(r => r.json())
       ]);
 
-      this.sonarrOptions = { rootFolders, qualityProfiles, languageProfiles };
+      this.sonarrOptions = { rootFolders, qualityProfiles };
       this.renderSonarrOptions();
     } catch (error) {
       console.error('[loadSonarrOptions] Failed:', error);
@@ -465,19 +515,11 @@ setupEventListeners() {
   renderSonarrOptions() {
     const rootSelect = document.getElementById('sonarr-root-folder');
     const qualitySelect = document.getElementById('sonarr-quality-profile');
-    const languageSelect = document.getElementById('sonarr-language-profile');
 
     rootSelect.innerHTML = '<option value="">选择路径...</option>' + 
       this.sonarrOptions.rootFolders.map(f => `<option value="${f.path}">${f.path} (${this.formatBytes(f.freeSpace)} Free)</option>`).join('');
 
     qualitySelect.innerHTML = this.sonarrOptions.qualityProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-    
-    // 如果没有语言配置（Sonarr V4），可能需要隐藏该字段或使用默认值
-    if (this.sonarrOptions.languageProfiles.length > 0) {
-      languageSelect.innerHTML = this.sonarrOptions.languageProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-    } else {
-      languageSelect.innerHTML = '<option value="1">English (Default)</option>';
-    }
   }
 
   formatBytes(bytes, decimals = 2) {
