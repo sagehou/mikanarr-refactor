@@ -16,6 +16,12 @@ const PORT = parseInt(process.env.PORT || '12306');
 app.use(cors());
 app.use(express.json());
 
+// 设置Permissions-Policy头，移除不支持的特性
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', '');
+  next();
+});
+
 app.use(express.static(path.join(__dirname, '../public')));
 
 app.use('/auth', authRoutes);
