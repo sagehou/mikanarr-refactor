@@ -21,6 +21,16 @@ function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // TMDB Chinese name cache table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tmdb_cache (
+      tmdb_id INTEGER PRIMARY KEY,
+      title_en TEXT NOT NULL,
+      title_zh TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 }
 
 function getPatterns() {
@@ -67,6 +77,29 @@ function deletePattern(id) {
   return stmt.run(id);
 }
 
+// TMDB Cache functions
+function getTmdbCache() {
+  return db.prepare('SELECT * FROM tmdb_cache').all();
+}
+
+function getTmdbCacheByIds(tmdbIds) {
+  if (!tmdbIds || tmdbIds.length === 0) return [];
+  const placeholders = tmdbIds.map(() => '?').join(',');
+  return db.prepare(`SELECT * FROM tmdb_cache WHERE tmdb_id IN (${placeholders})`).all(...tmdbIds);
+}
+
+function upsertTmdbCache(tmdbId, titleEn, titleZh) {
+  const stmt = db.prepare(`
+    INSERT INTO tmdb_cache (tmdb_id, title_en, title_zh, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(tmdb_id) DO UPDATE SET
+      title_en = excluded.title_en,
+      title_zh = excluded.title_zh,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  return stmt.run(tmdbId, titleEn, titleZh);
+}
+
 module.exports = {
   initDb,
   getPatterns,
@@ -74,5 +107,8 @@ module.exports = {
   createPattern,
   updatePattern,
   deletePattern,
+  getTmdbCache,
+  getTmdbCacheByIds,
+  upsertTmdbCache,
   db
 };

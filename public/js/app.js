@@ -99,6 +99,9 @@ setupEventListeners() {
   // 当前排序状态
   currentSort = { field: 'id', direction: 'desc' };
 
+  // TMDB中文名缓存 { tmdbId: titleZh }
+  tmdbCache = {};
+
   async loadSeries() {
     try {
       console.log('[loadSeries] Fetching series from Sonarr...');
@@ -124,9 +127,11 @@ setupEventListeners() {
       
       console.log('[loadSeries] Loaded', series.length, 'series');
       
-      console.log('[loadSeries] Loaded', series.length, 'series');
-      
       this.seriesList = series;
+
+      // Sync TMDB Chinese names for new series
+      await this.syncTmdbCache(series);
+      
       this.renderSeriesOptions(series);
     } catch (error) {
       console.error('[loadSeries] Failed to load series:', error);
@@ -155,6 +160,43 @@ setupEventListeners() {
     }
   }
 
+  async syncTmdbCache(series) {
+    try {
+      // Prepare series data for sync
+      const seriesData = series
+        .filter(s => s.tmdbId)
+        .map(s => ({ tmdbId: s.tmdbId, titleEn: s.title }));
+
+      if (seriesData.length === 0) {
+        console.log('[syncTmdbCache] No series with tmdbId to sync');
+        return;
+      }
+
+      console.log('[syncTmdbCache] Syncing', seriesData.length, 'series...');
+      
+      const response = await this.apiRequest('/tmdb/cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ series: seriesData })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        this.tmdbCache = data.cache || {};
+        console.log('[syncTmdbCache] Synced', data.synced, 'new series, cache size:', Object.keys(this.tmdbCache).length);
+      } else {
+        console.warn('[syncTmdbCache] Sync failed, trying to load existing cache...');
+        // Fallback: try to load existing cache
+        const cacheResponse = await this.apiRequest('/tmdb/cache');
+        if (cacheResponse.ok) {
+          this.tmdbCache = await cacheResponse.json();
+        }
+      }
+    } catch (error) {
+      console.error('[syncTmdbCache] Error:', error.message);
+    }
+  }
+
   renderSeriesOptions(series) {
     const select = document.getElementById('series');
     select.innerHTML = '<option value="">选择系列...</option>';
@@ -169,7 +211,11 @@ setupEventListeners() {
     series.forEach(s => {
       const option = document.createElement('option');
       option.value = s.title;
-      option.textContent = s.title;
+      
+      // Display format: "English Name (中文名)" if Chinese name exists
+      const zhName = s.tmdbId ? this.tmdbCache[s.tmdbId] : null;
+      option.textContent = zhName ? `${s.title} (${zhName})` : s.title;
+      
       select.appendChild(option);
     });
     
@@ -221,53 +267,8 @@ setupEventListeners() {
     if (currentSeason) {
       seasonSelect.value = currentSeason;
     }
-
-    await this.loadTmdbInfo(series);
   }
 
-  async loadTmdbInfo(series) {
-    const tmdbBox = document.getElementById('tmdb-info-box');
-
-    if (!series?.tmdbId) {
-      tmdbBox.classList.add('d-none');
-      return;
-    }
-
-    try {
-      const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}?language=zh-CN`);
-
-      // Handle 503 - TMDB not configured
-      if (response.status === 503) {
-        console.warn('[loadTmdbInfo] TMDB not configured, skipping');
-        tmdbBox.classList.add('d-none');
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('[loadTmdbInfo] TMDB request failed:', errorData);
-        tmdbBox.classList.add('d-none');
-        return;
-      }
-
-      const data = await response.json();
-      this.renderTmdbInfo(data);
-      tmdbBox.classList.remove('d-none');
-    } catch (error) {
-      console.error('[loadTmdbInfo] Failed to load TMDB info:', error);
-      tmdbBox.classList.add('d-none');
-    }
-  }
-
-  renderTmdbInfo(data) {
-    const posterUrl = data.poster_path 
-      ? `https://image.tmdb.org/t/p/w200${data.poster_path}`
-      : 'https://via.placeholder.com/60x90?text=No+Image';
-    
-    document.getElementById('tmdb-poster').src = posterUrl;
-    document.getElementById('tmdb-title').textContent = data.name || data.original_name;
-    document.getElementById('tmdb-overview').textContent = data.overview?.substring(0, 100) + '...' || '';
-  }
 
   renderPatterns(patterns) {
     const tbody = document.getElementById('pattern-table-body');
@@ -376,7 +377,6 @@ setupEventListeners() {
       document.getElementById('quality').value = 'WEBDL 1080p';
       document.getElementById('offset').value = '0';
       
-      document.getElementById('tmdb-info-box').classList.add('d-none');
       document.getElementById('proxy-url-box').classList.add('d-none');
     }
   }
