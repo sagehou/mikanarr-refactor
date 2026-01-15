@@ -9,6 +9,7 @@ const proxyRoutes = require('./routes/proxy');
 const sonarrRoutes = require('./routes/sonarr');
 const rssRoutes = require('./routes/rss');
 const tmdbRoutes = require('./routes/tmdb');
+const { verifyToken } = require('./routes/auth');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '12306');
@@ -23,6 +24,13 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Config API - expose Sonarr host for frontend
+app.get('/api/config', verifyToken, (req, res) => {
+  res.json({
+    sonarrHost: process.env.SONARR_HOST || ''
+  });
+});
 
 app.use('/auth', authRoutes);
 app.use('/api/patterns', patternRoutes);

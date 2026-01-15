@@ -18,11 +18,24 @@ class MikanarrApp {
     if (this.token) {
       document.getElementById('login-container').classList.add('d-none');
       document.getElementById('main-container').classList.remove('d-none');
+      this.loadConfig();
       this.loadPatterns();
       this.loadSeries();
     } else {
       document.getElementById('login-container').classList.remove('d-none');
       document.getElementById('main-container').classList.add('d-none');
+    }
+  }
+
+  async loadConfig() {
+    try {
+      const response = await this.apiRequest('/api/config');
+      if (response.ok) {
+        const config = await response.json();
+        this.sonarrHost = config.sonarrHost || '';
+      }
+    } catch (error) {
+      console.warn('[loadConfig] Failed to load config:', error.message);
     }
   }
 
@@ -296,6 +309,13 @@ setupEventListeners() {
       }
       
       const displayName = zhName ? `${pattern.series} (${zhName})` : pattern.series;
+      
+      // Sonarr link button
+      const sonarrBtn = series?.titleSlug && this.sonarrHost 
+        ? `<a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+            <i class="bi bi-box-arrow-up-right"></i>
+          </a>`
+        : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -306,6 +326,7 @@ setupEventListeners() {
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
         <td>${this.escapeHtml(pattern.releasegroup || '-')}</td>
         <td>
+          ${sonarrBtn}
           <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}">
             <i class="bi bi-pencil"></i>
           </button>
