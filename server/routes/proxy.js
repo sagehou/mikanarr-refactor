@@ -25,9 +25,15 @@ router.get('/', async (req, res) => {
     });
     console.log(`[Mikan Proxy] Response: ${response.status}, Data length: ${response.data?.length || 0}`);
     
-    const xmlData = response.data;
+    let xmlData = response.data;
     
-    // 检查是否所有items都有pubDate
+    // 首先替换空pubDate标签为有效的pubDate
+    xmlData = xmlData.replace(/<pubDate\s*\/>/g, () => {
+      const now = new Date().toISOString();
+      return `<pubDate>${now}</pubDate>`;
+    });
+    
+    // 检查是否还有item缺少pubDate
     const items = xmlData.split('<item>');
     let needsUpdate = false;
     
@@ -38,16 +44,16 @@ router.get('/', async (req, res) => {
       
       const itemContent = item.substring(0, itemEnd);
       
-      // 检查是否有完整的pubDate元素（不是空标签）
-      if (!itemContent.includes('<pubDate>') && !itemContent.includes('<pubDate ')) {
+      // 检查是否有完整的pubDate元素
+      if (!itemContent.includes('<pubDate>')) {
         needsUpdate = true;
         break;
       }
     }
     
-    // 如果所有items都有pubDate，直接返回原始数据
+    // 如果所有items都有pubDate，直接返回处理后的数据
     if (!needsUpdate) {
-      console.log('[Mikan Proxy] All items have pubDate, returning original XML');
+      console.log('[Mikan Proxy] All items have pubDate, returning XML');
       res.set('Content-Type', 'application/xml');
       res.send(xmlData);
       return;
@@ -64,8 +70,8 @@ router.get('/', async (req, res) => {
       const itemContent = item.substring(0, itemEnd);
       const remainingContent = item.substring(itemEnd);
       
-      // 检查是否有完整的pubDate元素（不是空标签）
-      if (itemContent.includes('<pubDate>') || itemContent.includes('<pubDate ')) {
+      // 检查是否有完整的pubDate元素
+      if (itemContent.includes('<pubDate>')) {
         return `<item>${item}`;
       }
       
