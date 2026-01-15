@@ -18,6 +18,9 @@ class MikanarrApp {
   }
 
   async checkOidcConfig() {
+    // If already logged in, skip config check
+    if (this.token) return;
+
     try {
       const response = await fetch('/auth/config');
       if (response.ok) {
