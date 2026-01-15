@@ -198,7 +198,8 @@ setupEventListeners() {
           }
           // Use image proxy for remote URLs to avoid timeout/mixed content issues
           else if (posterUrl.startsWith('http')) {
-            posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}`;
+            const token = localStorage.getItem('token');
+            posterUrl = `/api/image-proxy?url=${encodeURIComponent(posterUrl)}&token=${token}`;
           }
         } else {
           posterUrl = 'https://via.placeholder.com/60x90';
