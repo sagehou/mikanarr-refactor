@@ -27,38 +27,62 @@ router.get('/', async (req, res) => {
     
     const xmlData = response.data;
     
-    // 简单处理：为每个item添加pubDate元素（如果不存在）
-    if (xmlData.includes('<item>')) {
-      // 分割所有items
-      const parts = xmlData.split('<item>');
-      const updatedParts = parts.map((part, index) => {
-        if (index === 0) return part; // 第一个部分是RSS头，不需要处理
-        
-        // 检查这个item是否包含</item>
-        const itemEndIndex = part.indexOf('</item>');
-        if (itemEndIndex === -1) return part; // 没有item结束标记
-        
-        const itemContent = part.substring(0, itemEndIndex);
-        const remainingContent = part.substring(itemEndIndex);
-        
-        // 检查是否已经有pubDate
-        if (itemContent.includes('<pubDate>')) {
-          return `<item>${part}`;
-        }
-        
-        // 添加pubDate到item中
-        const now = new Date().toISOString();
-        return `<item>${itemContent}<pubDate>${now}</pubDate>${remainingContent}`;
-      });
+    // 检查是否所有items都有pubDate
+    const items = xmlData.split('<item>');
+    let needsUpdate = false;
+    
+    for (let i = 1; i < items.length; i++) {
+      const item = items[i];
+      const itemEnd = item.lastIndexOf('</item>');
+      if (itemEnd === -1) continue;
       
-      const updatedXml = updatedParts.join('<item>');
+      const itemContent = item.substring(0, itemEnd);
       
-      res.set('Content-Type', 'application/xml');
-      res.send(updatedXml);
-    } else {
+      // 检查是否有完整的pubDate元素（不是空标签）
+      if (!itemContent.includes('<pubDate>') && !itemContent.includes('<pubDate ')) {
+        needsUpdate = true;
+        break;
+      }
+    }
+    
+    // 如果所有items都有pubDate，直接返回原始数据
+    if (!needsUpdate) {
+      console.log('[Mikan Proxy] All items have pubDate, returning original XML');
       res.set('Content-Type', 'application/xml');
       res.send(xmlData);
+      return;
     }
+    
+    // 需要更新，逐个处理items
+    console.log('[Mikan Proxy] Adding missing pubDate elements');
+    const updatedItems = items.map((item, index) => {
+      if (index === 0) return item; // RSS头
+      
+      const itemEnd = item.lastIndexOf('</item>');
+      if (itemEnd === -1) return item;
+      
+      const itemContent = item.substring(0, itemEnd);
+      const remainingContent = item.substring(itemEnd);
+      
+      // 检查是否有完整的pubDate元素（不是空标签）
+      if (itemContent.includes('<pubDate>') || itemContent.includes('<pubDate ')) {
+        return `<item>${item}`;
+      }
+      
+      // 在title元素后添加pubDate
+      const titleEnd = itemContent.indexOf('</title>');
+      if (titleEnd !== -1) {
+        const now = new Date().toISOString();
+        return `<item>${itemContent.substring(0, titleEnd + 9)}<pubDate>${now}</pubDate>${itemContent.substring(titleEnd + 9)}${remainingContent}`;
+      }
+      
+      return `<item>${item}`;
+    });
+    
+    const updatedXml = updatedItems.join('<item>');
+    res.set('Content-Type', 'application/xml');
+    res.send(updatedXml);
+    
   } catch (error) {
     const axiosError = error;
     console.error('[Mikan Proxy] Error:', axiosError.message);
