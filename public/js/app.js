@@ -281,12 +281,26 @@ setupEventListeners() {
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
+      
+      // Check match status
+      let matchStatus = '';
+      let matchIcon = '';
+      if (!series) {
+        // Series not found in Sonarr at all
+        matchStatus = 'not-found';
+        matchIcon = '<i class="bi bi-exclamation-circle text-danger" title="Sonarr中未找到此系列"></i> ';
+      } else if (series.title !== pattern.series) {
+        // Found but case doesn't match exactly - might need update
+        matchStatus = 'case-mismatch';
+        matchIcon = `<i class="bi bi-exclamation-triangle text-warning" title="名称不完全匹配，Sonarr中为: ${this.escapeHtml(series.title)}"></i> `;
+      }
+      
       const displayName = zhName ? `${pattern.series} (${zhName})` : pattern.series;
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${pattern.id}</td>
-        <td><strong>${this.escapeHtml(displayName)}</strong></td>
+        <td>${matchIcon}<strong>${this.escapeHtml(displayName)}</strong></td>
         <td><span class="badge bg-secondary">S${pattern.season}</span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
