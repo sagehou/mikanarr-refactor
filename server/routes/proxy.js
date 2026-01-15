@@ -27,21 +27,31 @@ router.get('/', async (req, res) => {
     
     const xmlData = response.data;
     
-    // 为每个item添加pubDate元素（如果不存在）
+    // 简单处理：为每个item添加pubDate元素（如果不存在）
     if (xmlData.includes('<item>')) {
-      // 更好的正则表达式来处理XML item
-      const updatedXml = xmlData.replace(
-        /<item>([\s\S]*?)<\/item>/g,
-        (match, itemContent) => {
-          // 检查是否已经有pubDate
-          if (!itemContent.includes('<pubDate')) {
-            // 如果没有pubDate，添加当前时间
-            const now = new Date().toISOString();
-            return `<item>${itemContent}<pubDate>${now}</pubDate></item>`;
-          }
-          return match;
+      // 分割所有items
+      const parts = xmlData.split('<item>');
+      const updatedParts = parts.map((part, index) => {
+        if (index === 0) return part; // 第一个部分是RSS头，不需要处理
+        
+        // 检查这个item是否包含</item>
+        const itemEndIndex = part.indexOf('</item>');
+        if (itemEndIndex === -1) return part; // 没有item结束标记
+        
+        const itemContent = part.substring(0, itemEndIndex);
+        const remainingContent = part.substring(itemEndIndex);
+        
+        // 检查是否已经有pubDate
+        if (itemContent.includes('<pubDate>')) {
+          return `<item>${part}`;
         }
-      );
+        
+        // 添加pubDate到item中
+        const now = new Date().toISOString();
+        return `<item>${itemContent}<pubDate>${now}</pubDate>${remainingContent}`;
+      });
+      
+      const updatedXml = updatedParts.join('<item>');
       
       res.set('Content-Type', 'application/xml');
       res.send(updatedXml);
