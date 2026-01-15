@@ -392,6 +392,38 @@ setupEventListeners() {
     languageProfiles: []
   };
 
+  async getOrCreateMikanarrTag() {
+    const TAG_LABEL = 'mikanarr';
+    try {
+      // 1. Get all tags
+      const response = await this.apiRequest('/sonarr/api/v3/tag');
+      if (!response.ok) return null;
+      
+      const tags = await response.json();
+      const existingTag = tags.find(t => t.label.toLowerCase() === TAG_LABEL);
+      
+      if (existingTag) {
+        return existingTag.id;
+      }
+      
+      // 2. Create tag if not exists
+      console.log('[getOrCreateMikanarrTag] Creating new tag:', TAG_LABEL);
+      const createResponse = await this.apiRequest('/sonarr/api/v3/tag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: TAG_LABEL })
+      });
+      
+      if (createResponse.ok) {
+        const newTag = await createResponse.json();
+        return newTag.id;
+      }
+    } catch (e) {
+      console.warn('[getOrCreateMikanarrTag] Failed:', e);
+    }
+    return null;
+  }
+
   async submitAddSeries() {
     if (!this.selectedSeries) return;
 
@@ -407,6 +439,14 @@ setupEventListeners() {
       return;
     }
 
+    const submitBtn = document.getElementById('add-series-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '添加中...';
+
+    // Get tag ID
+    const tagId = await this.getOrCreateMikanarrTag();
+    const tags = tagId ? [tagId] : [];
+
     const payload = {
       title: this.selectedSeries.title,
       qualityProfileId: qualityProfileId,
@@ -416,15 +456,12 @@ setupEventListeners() {
       monitored: monitor !== 'none',
       seriesType: seriesType,
       images: this.selectedSeries.images,
+      tags: tags,
       addOptions: {
         monitor: monitor,
         searchForMissingEpisodes: false
       }
     };
-
-    const submitBtn = document.getElementById('add-series-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = '添加中...';
 
     try {
       const response = await this.apiRequest('/sonarr/api/v3/series', {
