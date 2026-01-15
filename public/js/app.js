@@ -148,7 +148,7 @@ setupEventListeners() {
 
   // Add Series Logic
   showAddSeriesModal(initialQuery = '') {
-    const modal = new bootstrap.Modal(document.getElementById('add-series-modal'));
+    const modal = new window.bootstrap.Modal(document.getElementById('add-series-modal'));
     document.getElementById('sonarr-search-input').value = initialQuery;
     document.getElementById('sonarr-search-results').innerHTML = '';
     document.getElementById('add-series-step-1').classList.remove('d-none');
@@ -476,7 +476,7 @@ setupEventListeners() {
       }
 
       // Success
-      const modal = bootstrap.Modal.getInstance(document.getElementById('add-series-modal'));
+      const modal = window.bootstrap.Modal.getInstance(document.getElementById('add-series-modal'));
       modal.hide();
       
       // Reload series list
