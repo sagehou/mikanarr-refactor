@@ -39,13 +39,19 @@ class MikanarrApp {
     }
   }
 
-  checkAuth() {
+  async checkAuth() {
     if (this.token) {
       document.getElementById('login-container').classList.add('d-none');
       document.getElementById('main-container').classList.remove('d-none');
-      this.loadConfig();
-      this.loadPatterns();
-      this.loadSeries();
+      
+      // Load config first
+      await this.loadConfig();
+      
+      // Then load data in parallel
+      await Promise.all([
+        this.loadPatterns(),
+        this.loadSeries()
+      ]);
     } else {
       document.getElementById('login-container').classList.remove('d-none');
       document.getElementById('main-container').classList.add('d-none');
