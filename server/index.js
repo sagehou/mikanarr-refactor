@@ -17,25 +17,26 @@ const PORT = parseInt(process.env.PORT || '12306');
 
 app.use(cors());
 
-// 设置Permissions-Policy头，移除不支持的特性
+// 设置Permissions-Policy头
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', '');
   next();
 });
 
-// Proxy routes (MUST be before body parser)
+// 1. 代理路由 (不使用 body-parser，避免流被消费)
 app.use('/sonarr', sonarrRoutes);
 app.use('/proxy', proxyRoutes);
 app.use('/api/image-proxy', imageProxyRoutes);
 
-// Body parser for other routes
+// 2. 全局 Body Parser (用于后续 API)
 app.use(express.json());
 
+// 3. 静态文件
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Config API - expose Sonarr host for frontend
+// 4. API 路由
+// Config API
 app.get('/api/config', verifyToken, (req, res) => {
-  // Return public URL for frontend links, fallback to internal host
   res.json({
     sonarrHost: process.env.SONARR_PUBLIC_URL || process.env.SONARR_HOST || ''
   });
@@ -43,15 +44,12 @@ app.get('/api/config', verifyToken, (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/api/patterns', patternRoutes);
-app.use('/proxy', proxyRoutes);
-app.use('/sonarr', sonarrRoutes);
 app.use('/RSS', rssRoutes);
 app.use('/tmdb', tmdbRoutes);
-app.use('/api/image-proxy', imageProxyRoutes);
 
-// Catch-all for static files and SPA routing (only for non-API requests)
+// 5. Catch-all (SPA 支持)
 app.get('*', (req, res, next) => {
-  // Don't interfere with API requests
+  // 不拦截 API 请求，如果上面的路由没匹配到，交给 Error Handler 或默认 404
   if (req.path.startsWith('/api') || req.path.startsWith('/sonarr') ||
       req.path.startsWith('/proxy') || req.path.startsWith('/RSS') ||
       req.path.startsWith('/tmdb') || req.path.startsWith('/auth')) {
@@ -60,12 +58,14 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// Global error handler
+// 6. 全局错误处理
 app.use((err, req, res, next) => {
   console.error('[Server Error]', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error'
-  });
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal server error'
+    });
+  }
 });
 
 async function start() {
