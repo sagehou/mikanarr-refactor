@@ -49,8 +49,9 @@ router.get('/*', async (req, res) => {
     const items = [];
     for (const item of result.rss.channel[0].item || []) {
       const title = item.title[0];
-      const pubDate = item.pubDate?.[0];
-      const enclosure = item.enclosure?.[0]?.$;
+      // pubDate is inside <torrent> element in Mikan RSS
+      const pubDate = item['torrent']?.[0]?.pubDate?.[0] || item.pubDate?.[0];
+      const enclosureAttrs = item.enclosure?.[0]?.$;
       const link = item.link?.[0];
 
       for (const pattern of patterns) {
@@ -58,8 +59,9 @@ router.get('/*', async (req, res) => {
         if (newTitle) {
           items.push({
             title: [newTitle],
-            pubDate,
-            enclosure,
+            pubDate: pubDate ? [pubDate] : undefined,
+            // xml2js Builder requires { $: {...} } format for XML attributes
+            enclosure: enclosureAttrs ? [{ $: enclosureAttrs }] : undefined,
             link,
             guid: [{ $: { isPermaLink: 'true' }, _: link }],
           });
