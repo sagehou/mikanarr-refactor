@@ -1,30 +1,30 @@
-/* 主题变量 */
+/* 主题变量 - 美拉德色系 (低饱和度大地色) */
 :root {
-  --bg-primary: #f5f5f5;
-  --bg-secondary: #ffffff;
-  --bg-card: #ffffff;
-  --bg-table-header: #f8f9fa;
-  --bg-hover: #f8f9fa;
-  --text-primary: #212529;
-  --text-secondary: #495057;
-  --text-muted: #6c757d;
-  --border-color: #dee2e6;
-  --shadow-color: rgba(0, 0, 0, 0.075);
-  --accent-color: #667eea;
+  --bg-primary: #fdfbf7;      /* 浅米色/奶油色 */
+  --bg-secondary: #ffffff;    /* 白色 */
+  --bg-card: #ffffff;         /* 白色 */
+  --bg-table-header: #f5f0e6; /* 浅卡其色 */
+  --bg-hover: #faf6f0;        /* 极浅棕色 */
+  --text-primary: #4a3b32;    /* 深褐色/咖啡色 */
+  --text-secondary: #786b61;  /* 灰褐色 */
+  --text-muted: #9e9085;      /* 浅灰褐 */
+  --border-color: #e6ddd0;    /* 浅褐色 */
+  --shadow-color: rgba(74, 59, 50, 0.05); /* 暖色调阴影 */
+  --accent-color: #b07d62;    /* 焦糖色/砖红色 */
 }
 
 [data-theme="dark"] {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-card: #0f3460;
-  --bg-table-header: #16213e;
-  --bg-hover: #1a1a4e;
-  --text-primary: #e4e4e4;
-  --text-secondary: #b8b8b8;
-  --text-muted: #8a8a8a;
-  --border-color: #3a3a5c;
+  --bg-primary: #2c241b;      /* 深咖啡色背景 */
+  --bg-secondary: #3d3226;    /* 深棕色 */
+  --bg-card: #3d3226;         /* 深棕色卡片 */
+  --bg-table-header: #4a3c31; /* 中棕色 */
+  --bg-hover: #4a3c31;        /* 悬停高亮 */
+  --text-primary: #e0d8cf;    /* 米灰色文本 */
+  --text-secondary: #b8b8b8;  /* 浅灰色 */
+  --text-muted: #8a8a8a;      /* 灰色 */
+  --border-color: #5c4b3e;    /* 深褐色边框 */
   --shadow-color: rgba(0, 0, 0, 0.3);
-  --accent-color: #7b8cff;
+  --accent-color: #d49a7e;    /* 亮焦糖色 */
 }
 
 body {
@@ -38,7 +38,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #b07d62 0%, #8a5a44 100%);
 }
 
 .login-box {
@@ -116,13 +116,13 @@ body {
 }
 
 .rss-item.matched {
-  background-color: rgba(13, 110, 253, 0.1);
+  background-color: rgba(176, 125, 98, 0.1);
   color: var(--accent-color);
   border-left: 3px solid var(--accent-color);
 }
 
 .rss-item.matched:hover {
-  background-color: rgba(13, 110, 253, 0.2);
+  background-color: rgba(176, 125, 98, 0.2);
 }
 
 .tmdb-poster {
@@ -143,8 +143,8 @@ body {
 }
 
 .btn-primary:hover {
-  background-color: #5568d3;
-  border-color: #5568d3;
+  background-color: #8a5a44; /* Darker accent */
+  border-color: #8a5a44;
 }
 
 .navbar-brand {
@@ -155,7 +155,7 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+  box-shadow: 0 0 0 0.25rem rgba(176, 125, 98, 0.25);
 }
 
 .form-control, .form-select {
