@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const xml2js = require('xml2js');
-const { getPatterns } = require('../database');
+const { getPatterns, incrementMatchCount } = require('../database');
 
 const router = express.Router();
 
@@ -57,6 +57,9 @@ router.get('/*', async (req, res) => {
       for (const pattern of patterns) {
         const newTitle = transformTitle(title, pattern);
         if (newTitle) {
+          // Increment match count (async, don't wait)
+          incrementMatchCount(pattern.id);
+          
           items.push({
             title: [newTitle],
             pubDate: pubDate ? [pubDate] : undefined,

@@ -10,8 +10,33 @@ class MikanarrApp {
   }
 
   init() {
+    this.initTheme();
     this.checkAuth();
     this.setupEventListeners();
+  }
+
+  initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    this.updateThemeIcon(savedTheme);
+  }
+
+  toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    this.updateThemeIcon(newTheme);
+  }
+
+  updateThemeIcon(theme) {
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.innerHTML = theme === 'dark' 
+        ? '<i class="bi bi-sun"></i>' 
+        : '<i class="bi bi-moon-stars"></i>';
+    }
   }
 
   checkAuth() {
@@ -42,6 +67,7 @@ class MikanarrApp {
 setupEventListeners() {
     document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
+    document.getElementById('theme-toggle').addEventListener('click', () => this.toggleTheme());
     document.getElementById('new-pattern-btn').addEventListener('click', () => this.showPatternEdit());
     document.getElementById('back-btn').addEventListener('click', () => this.showPatternList());
     document.getElementById('cancel-btn').addEventListener('click', () => this.showPatternList());
@@ -56,6 +82,21 @@ setupEventListeners() {
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
     document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
+    
+    // Mikan导入
+    document.getElementById('import-mikan-btn').addEventListener('click', () => this.importFromMikan());
+    
+    // 批量操作
+    document.getElementById('select-all').addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
+    document.getElementById('batch-delete-btn').addEventListener('click', () => this.batchDelete());
+    document.getElementById('pattern-table-body').addEventListener('change', (e) => {
+      if (e.target.classList.contains('row-checkbox')) {
+        this.updateBatchUI();
+      }
+    });
+    
+    // Pattern测试按钮
+    document.getElementById('test-pattern-btn').addEventListener('click', () => this.testPattern());
     
     // 添加表头排序事件监听
     document.querySelectorAll('.sortable').forEach(th => {
@@ -298,6 +339,7 @@ setupEventListeners() {
       // Check match status
       let matchStatus = '';
       let matchIcon = '';
+      let fixBtn = '';
       if (!series) {
         // Series not found in Sonarr at all
         matchStatus = 'not-found';
@@ -306,6 +348,9 @@ setupEventListeners() {
         // Found but case doesn't match exactly - might need update
         matchStatus = 'case-mismatch';
         matchIcon = `<i class="bi bi-exclamation-triangle text-warning" title="名称不完全匹配，Sonarr中为: ${this.escapeHtml(series.title)}"></i> `;
+        fixBtn = `<button class="btn btn-sm btn-outline-warning btn-fix" data-id="${pattern.id}" data-correct-name="${this.escapeHtml(series.title)}" title="修复为: ${this.escapeHtml(series.title)}">
+            <i class="bi bi-wrench"></i>
+          </button>`;
       }
       
       const displayName = zhName ? `${pattern.series} (${zhName})` : pattern.series;
@@ -316,17 +361,38 @@ setupEventListeners() {
             <i class="bi bi-box-arrow-up-right"></i>
           </a>`
         : '';
+      
+      // Copy proxy URL button (only if remote URL exists)
+      const copyUrlBtn = pattern.remote
+        ? `<button class="btn btn-sm btn-outline-secondary btn-copy-url" data-remote="${this.escapeHtml(pattern.remote)}" title="复制代理URL">
+            <i class="bi bi-clipboard"></i>
+          </button>`
+        : '';
+
+      // Format last matched time
+      let lastMatched = '-';
+      if (pattern.last_matched_at) {
+        const date = new Date(pattern.last_matched_at);
+        lastMatched = `<div title="${date.toLocaleString()}">
+          ${date.toLocaleDateString()}<br>
+          <small class="text-muted">共 ${pattern.match_count || 0} 次</small>
+        </div>`;
+      }
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
+        <td><input type="checkbox" class="form-check-input row-checkbox" data-id="${pattern.id}"></td>
         <td>${pattern.id}</td>
         <td>${matchIcon}<strong>${this.escapeHtml(displayName)}</strong></td>
         <td><span class="badge bg-secondary">S${pattern.season}</span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
+        <td>${lastMatched}</td>
         <td>${this.escapeHtml(pattern.releasegroup || '-')}</td>
-        <td>
+        <td class="text-nowrap">
+          ${copyUrlBtn}
           ${sonarrBtn}
+          ${fixBtn}
           <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}">
             <i class="bi bi-pencil"></i>
           </button>
@@ -345,6 +411,209 @@ setupEventListeners() {
     tbody.querySelectorAll('.btn-delete').forEach(btn => {
       btn.addEventListener('click', (e) => this.deletePattern(parseInt(e.currentTarget.dataset.id)));
     });
+
+    tbody.querySelectorAll('.btn-fix').forEach(btn => {
+      btn.addEventListener('click', (e) => this.fixPatternName(
+        parseInt(e.currentTarget.dataset.id),
+        e.currentTarget.dataset.correctName
+      ));
+    });
+
+    tbody.querySelectorAll('.btn-copy-url').forEach(btn => {
+      btn.addEventListener('click', (e) => this.copyProxyUrlFromRemote(e.currentTarget.dataset.remote));
+    });
+  }
+
+  async copyProxyUrlFromRemote(remoteUrl) {
+    try {
+      const url = new URL(remoteUrl);
+      const proxyUrl = `${window.location.origin}${url.pathname}${url.search}`;
+      await navigator.clipboard.writeText(proxyUrl);
+      
+      // Show brief feedback
+      const toast = document.createElement('div');
+      toast.className = 'position-fixed bottom-0 end-0 p-3';
+      toast.innerHTML = `<div class="toast show bg-success text-white"><div class="toast-body">已复制代理URL</div></div>`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    } catch (error) {
+      alert('复制失败: ' + error.message);
+    }
+  }
+
+  async fixPatternName(id, correctName) {
+    if (!confirm(`确定要将系列名修复为 "${correctName}" 吗？`)) return;
+    
+    try {
+      // First get the current pattern
+      const getResponse = await this.apiRequest(`/api/patterns/${id}`);
+      if (!getResponse.ok) throw new Error('获取Pattern失败');
+      const pattern = await getResponse.json();
+      
+      // Update with correct name
+      pattern.series = correctName;
+      
+      const response = await this.apiRequest(`/api/patterns/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pattern)
+      });
+      
+      if (!response.ok) throw new Error('更新失败');
+      
+      this.loadPatterns();
+    } catch (error) {
+      alert('修复失败: ' + error.message);
+    }
+  }
+
+  // 批量操作相关
+  handleSelectAll(checked) {
+    document.querySelectorAll('.row-checkbox').forEach(cb => {
+      cb.checked = checked;
+    });
+    this.updateBatchUI();
+  }
+
+  updateBatchUI() {
+    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const batchBtn = document.getElementById('batch-delete-btn');
+    const selectAll = document.getElementById('select-all');
+    const allCheckboxes = document.querySelectorAll('.row-checkbox');
+    
+    document.getElementById('selected-count').textContent = selected.length;
+    
+    if (selected.length > 0) {
+      batchBtn.classList.remove('d-none');
+    } else {
+      batchBtn.classList.add('d-none');
+    }
+    
+    // Update select-all checkbox state
+    selectAll.checked = allCheckboxes.length > 0 && selected.length === allCheckboxes.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < allCheckboxes.length;
+  }
+
+  async batchDelete() {
+    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
+    
+    if (ids.length === 0) return;
+    
+    if (!confirm(`确定要删除选中的 ${ids.length} 个 Pattern 吗？`)) return;
+    
+    try {
+      for (const id of ids) {
+        await this.apiRequest(`/api/patterns/${id}`, { method: 'DELETE' });
+      }
+      this.loadPatterns();
+    } catch (error) {
+      alert('批量删除失败: ' + error.message);
+    }
+  }
+
+  testPattern() {
+    const patternStr = document.getElementById('pattern').value;
+    const resultBox = document.getElementById('pattern-test-result');
+    const outputDiv = document.getElementById('pattern-test-output');
+    
+    if (!patternStr) {
+      resultBox.classList.add('d-none');
+      return;
+    }
+    
+    if (!this.rssItems.length) {
+      outputDiv.innerHTML = '<span class="text-warning">请先输入RSS URL并加载RSS内容</span>';
+      resultBox.classList.remove('d-none');
+      return;
+    }
+    
+    try {
+      const regex = new RegExp(`^${patternStr}$`);
+      const matches = [];
+      const nonMatches = [];
+      
+      this.rssItems.forEach(title => {
+        const match = title.match(regex);
+        if (match?.groups?.episode) {
+          matches.push({
+            title,
+            episode: match.groups.episode
+          });
+        } else {
+          nonMatches.push(title);
+        }
+      });
+      
+      let html = '';
+      if (matches.length > 0) {
+        html += `<div class="text-success mb-2">✓ 匹配 ${matches.length} 条:</div>`;
+        html += '<ul class="mb-2">';
+        matches.slice(0, 5).forEach(m => {
+          html += `<li>${this.escapeHtml(m.title)} → <strong>E${m.episode}</strong></li>`;
+        });
+        if (matches.length > 5) {
+          html += `<li>... 还有 ${matches.length - 5} 条</li>`;
+        }
+        html += '</ul>';
+      }
+      
+      if (nonMatches.length > 0) {
+        html += `<div class="text-danger">✗ 未匹配 ${nonMatches.length} 条</div>`;
+      }
+      
+      if (matches.length === 0) {
+        html = '<span class="text-danger">未匹配任何条目，请检查正则表达式</span>';
+      }
+      
+      outputDiv.innerHTML = html;
+      resultBox.classList.remove('d-none');
+    } catch (error) {
+      outputDiv.innerHTML = `<span class="text-danger">正则表达式错误: ${this.escapeHtml(error.message)}</span>`;
+      resultBox.classList.remove('d-none');
+    }
+  }
+
+  importFromMikan() {
+    const input = document.getElementById('mikan-import').value.trim();
+    if (!input) {
+      alert('请输入Mikan URL');
+      return;
+    }
+
+    let bangumiId = null;
+    let subgroupid = null;
+
+    // Try to parse RSS URL
+    // Format: https://mikanani.me/RSS/Bangumi?bangumiId=3455&subgroupid=370
+    if (input.includes('bangumiId=')) {
+      const url = new URL(input);
+      bangumiId = url.searchParams.get('bangumiId');
+      subgroupid = url.searchParams.get('subgroupid');
+    } 
+    // Try to parse Home URL
+    // Format: https://mikanani.me/Home/Bangumi/3455
+    else {
+      const match = input.match(/\/Home\/Bangumi\/(\d+)/);
+      if (match) {
+        bangumiId = match[1];
+      }
+    }
+
+    if (bangumiId) {
+      let remoteUrl = `https://mikanani.me/RSS/Bangumi?bangumiId=${bangumiId}`;
+      if (subgroupid) {
+        remoteUrl += `&subgroupid=${subgroupid}`;
+      }
+      
+      document.getElementById('remote').value = remoteUrl;
+      this.loadRssPreview();
+      
+      // Clear input
+      document.getElementById('mikan-import').value = '';
+    } else {
+      alert('无法解析URL，请确保是有效的Mikan RSS或番剧页面URL');
+    }
   }
 
   getLanguageBadgeClass(language) {

@@ -18,9 +18,27 @@ function initDb() {
       quality TEXT DEFAULT 'WEBDL 1080p',
       offset INTEGER DEFAULT 0,
       releasegroup TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_matched_at DATETIME,
+      match_count INTEGER DEFAULT 0
     )
   `);
+  
+  // Add new columns if they don't exist (for existing databases)
+  try {
+    const columns = db.pragma('table_info(patterns)');
+    const hasLastMatchedAt = columns.some(c => c.name === 'last_matched_at');
+    const hasMatchCount = columns.some(c => c.name === 'match_count');
+    
+    if (!hasLastMatchedAt) {
+      db.exec('ALTER TABLE patterns ADD COLUMN last_matched_at DATETIME');
+    }
+    if (!hasMatchCount) {
+      db.exec('ALTER TABLE patterns ADD COLUMN match_count INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    console.error('Migration error:', e);
+  }
 
   // TMDB Chinese name cache table
   db.exec(`
@@ -100,6 +118,15 @@ function upsertTmdbCache(tmdbId, titleEn, titleZh) {
   return stmt.run(tmdbId, titleEn, titleZh);
 }
 
+function incrementMatchCount(id) {
+  const stmt = db.prepare(`
+    UPDATE patterns 
+    SET match_count = match_count + 1, last_matched_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `);
+  return stmt.run(id);
+}
+
 module.exports = {
   initDb,
   getPatterns,
@@ -110,5 +137,6 @@ module.exports = {
   getTmdbCache,
   getTmdbCacheByIds,
   upsertTmdbCache,
+  incrementMatchCount,
   db
 };

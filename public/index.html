@@ -48,7 +48,10 @@
                 <a class="nav-link active" href="/#">Patterns</a>
               </li>
             </ul>
-            <div class="d-flex">
+            <div class="d-flex align-items-center gap-2">
+              <button class="btn btn-link text-white p-0" id="theme-toggle" title="切换主题">
+                <i class="bi bi-moon-stars"></i>
+              </button>
               <button class="btn btn-outline-light" id="logout-btn">
                 <i class="bi bi-box-arrow-right"></i> 退出
               </button>
@@ -58,10 +61,13 @@
       </nav>
 
       <div class="container mt-4">
-        <div id="pattern-list" class="pattern-list">
+<div id="pattern-list" class="pattern-list">
 <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Patterns</h2>
             <div class="d-flex gap-2 align-items-center">
+              <button class="btn btn-outline-danger d-none" id="batch-delete-btn">
+                <i class="bi bi-trash"></i> 批量删除 (<span id="selected-count">0</span>)
+              </button>
               <button class="btn btn-outline-secondary" id="export-btn">
                 <i class="bi bi-download"></i> 导出
               </button>
@@ -82,11 +88,13 @@
                 <table class="table table-hover">
 <thead>
                     <tr>
+                      <th><input type="checkbox" class="form-check-input" id="select-all"></th>
                       <th class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up"></i></th>
                       <th class="sortable" data-sort="series">系列 <i class="bi bi-arrow-down-up"></i></th>
                       <th class="sortable" data-sort="season">季度 <i class="bi bi-arrow-down-up"></i></th>
                       <th class="sortable" data-sort="language">语言 <i class="bi bi-arrow-down-up"></i></th>
                       <th class="sortable" data-sort="quality">质量 <i class="bi bi-arrow-down-up"></i></th>
+                      <th class="sortable" data-sort="last_matched_at">最后匹配 <i class="bi bi-arrow-down-up"></i></th>
                       <th>字幕组</th>
                       <th>操作</th>
                     </tr>
@@ -113,6 +121,17 @@
                 <div class="card-body">
                   <form id="pattern-form">
                     <input type="hidden" id="pattern-id">
+
+                    <div class="mb-3">
+                      <label class="form-label">快速导入</label>
+                      <div class="input-group">
+                        <input type="text" class="form-control" id="mikan-import" placeholder="粘贴Mikan详情页URL或RSS URL (例如: https://mikanani.me/Home/Bangumi/3455)">
+                        <button class="btn btn-outline-primary" type="button" id="import-mikan-btn">
+                          <i class="bi bi-magic"></i> 解析
+                        </button>
+                      </div>
+                      <div class="form-text">支持RSS URL或番剧详情页URL，自动提取 bangumiId 和 subgroupid</div>
+                    </div>
                     
                     <div class="mb-3">
                       <label for="remote" class="form-label">Remote RSS URL</label>
@@ -144,6 +163,15 @@
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="episode-btn">
                           <i class="bi bi-hash"></i> Episode
                         </button>
+                        <button type="button" class="btn btn-sm btn-outline-success" id="test-pattern-btn">
+                          <i class="bi bi-play-circle"></i> 测试匹配
+                        </button>
+                      </div>
+                      <div id="pattern-test-result" class="mt-2 d-none">
+                        <div class="alert alert-info mb-0">
+                          <strong>匹配结果:</strong>
+                          <div id="pattern-test-output" class="mt-1 font-monospace small"></div>
+                        </div>
                       </div>
                     </div>
 
