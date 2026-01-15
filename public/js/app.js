@@ -89,6 +89,9 @@ setupEventListeners() {
     // 批量操作
     document.getElementById('select-all').addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
     document.getElementById('batch-delete-btn').addEventListener('click', () => this.batchDelete());
+    document.getElementById('batch-fix-btn').addEventListener('click', () => this.batchFix());
+    document.getElementById('filter-status').addEventListener('change', (e) => this.filterPatterns(document.getElementById('search-input').value));
+    
     document.getElementById('pattern-table-body').addEventListener('change', (e) => {
       if (e.target.classList.contains('row-checkbox')) {
         this.updateBatchUI();
@@ -143,7 +146,8 @@ setupEventListeners() {
       const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
       const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
       const patterns = await response.json();
-      this.renderPatterns(patterns);
+      this.allPatterns = patterns; // 保存所有 patterns
+      this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
     } catch (error) {
       console.error('Failed to load patterns:', error);
@@ -152,6 +156,7 @@ setupEventListeners() {
 
   // 当前排序状态
   currentSort = { field: 'id', direction: 'desc' };
+  allPatterns = []; // 初始化为空数组
 
   // TMDB中文名缓存 { tmdbId: titleZh }
   tmdbCache = {};
@@ -477,16 +482,32 @@ setupEventListeners() {
 
   updateBatchUI() {
     const selected = document.querySelectorAll('.row-checkbox:checked');
-    const batchBtn = document.getElementById('batch-delete-btn');
+    const batchDeleteBtn = document.getElementById('batch-delete-btn');
+    const batchFixBtn = document.getElementById('batch-fix-btn');
     const selectAll = document.getElementById('select-all');
     const allCheckboxes = document.querySelectorAll('.row-checkbox');
     
     document.getElementById('selected-count').textContent = selected.length;
     
     if (selected.length > 0) {
-      batchBtn.classList.remove('d-none');
+      batchDeleteBtn.classList.remove('d-none');
+      
+      // Check if any selected items need fixing
+      const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
+      const hasFixable = this.allPatterns.some(p => {
+        if (!ids.includes(p.id)) return false;
+        const series = this.seriesList?.find(s => s.title.toLowerCase() === p.series.toLowerCase());
+        return series && series.title !== p.series;
+      });
+      
+      if (hasFixable) {
+        batchFixBtn.classList.remove('d-none');
+      } else {
+        batchFixBtn.classList.add('d-none');
+      }
     } else {
-      batchBtn.classList.add('d-none');
+      batchDeleteBtn.classList.add('d-none');
+      batchFixBtn.classList.add('d-none');
     }
     
     // Update select-all checkbox state
@@ -509,6 +530,47 @@ setupEventListeners() {
       this.loadPatterns();
     } catch (error) {
       alert('批量删除失败: ' + error.message);
+    }
+  }
+
+  async batchFix() {
+    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
+    
+    if (ids.length === 0) return;
+    
+    const patternsToFix = this.allPatterns.filter(p => ids.includes(p.id));
+    const fixable = patternsToFix.filter(p => {
+      const series = this.seriesList?.find(s => s.title.toLowerCase() === p.series.toLowerCase());
+      return series && series.title !== p.series;
+    });
+
+    if (fixable.length === 0) {
+      alert('选中的项目中没有需要修复名称的 Pattern');
+      return;
+    }
+
+    if (!confirm(`确定要修复选中的 ${fixable.length} 个 Pattern 的系列名吗？`)) return;
+
+    try {
+      let successCount = 0;
+      for (const p of fixable) {
+        const series = this.seriesList.find(s => s.title.toLowerCase() === p.series.toLowerCase());
+        p.series = series.title; // Update local
+        
+        const response = await this.apiRequest(`/api/patterns/${p.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(p)
+        });
+        
+        if (response.ok) successCount++;
+      }
+      
+      this.loadPatterns();
+      alert(`成功修复 ${successCount} 个 Pattern`);
+    } catch (error) {
+      alert('批量修复失败: ' + error.message);
     }
   }
 
@@ -614,6 +676,91 @@ setupEventListeners() {
     } else {
       alert('无法解析URL，请确保是有效的Mikan RSS或番剧页面URL');
     }
+  }
+
+  // Levenshtein Distance Algorithm for fuzzy matching
+  levenshteinDistance(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = [];
+
+    // increment along the first column of each row
+    for (let i = 0; i <= b.length; i++) {
+      matrix[i] = [i];
+    }
+
+    // increment each column in the first row
+    for (let j = 0; j <= a.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    // Fill in the rest of the matrix
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1, // substitution
+            Math.min(
+              matrix[i][j - 1] + 1, // insertion
+              matrix[i - 1][j] + 1 // deletion
+            )
+          );
+        }
+      }
+    }
+
+    return matrix[b.length][a.length];
+  }
+
+  // Find best match series for a given title
+  findBestMatchSeries(title) {
+    if (!this.seriesList || !title) return null;
+    
+    // Normalize title: remove brackets, episode numbers, etc.
+    const cleanTitle = title
+      .replace(/^\[.*?\]\s*/, '') // Remove [Group]
+      .replace(/\s*-\s*\d+.*$/, '') // Remove - 01 ...
+      .replace(/\s*S\d+E\d+.*$/, '') // Remove S01E01 ...
+      .replace(/\s*第\d+话.*/, '') // Remove 第01话...
+      .trim();
+
+    let bestMatch = null;
+    let minDistance = Infinity;
+    
+    this.seriesList.forEach(series => {
+      const candidates = [series.title];
+      if (series.tmdbId && this.tmdbCache[series.tmdbId]) {
+        candidates.push(this.tmdbCache[series.tmdbId]);
+      }
+
+      candidates.forEach(candidateName => {
+        // 1. Check exact contains (very common)
+        if (cleanTitle.toLowerCase().includes(candidateName.toLowerCase()) || 
+            candidateName.toLowerCase().includes(cleanTitle.toLowerCase())) {
+          
+          // Prefer the one with closer length
+          const distance = Math.abs(cleanTitle.length - candidateName.length);
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = series;
+          }
+        }
+        
+        // 2. Fuzzy match
+        const dist = this.levenshteinDistance(cleanTitle.toLowerCase(), candidateName.toLowerCase());
+        const threshold = Math.max(cleanTitle.length, candidateName.length) * 0.4;
+        
+        if (dist < threshold && dist < minDistance) {
+          minDistance = dist;
+          bestMatch = series;
+        }
+      });
+    });
+
+    return bestMatch;
   }
 
   getLanguageBadgeClass(language) {
@@ -772,6 +919,32 @@ setupEventListeners() {
 
       this.rssItems = items.slice(0, 50);
       this.renderRssPreview();
+      
+      // Auto-match series if not selected
+      const currentSeries = document.getElementById('series').value;
+      if (!currentSeries && this.rssItems.length > 0) {
+        // Use the first item to find match
+        const match = this.findBestMatchSeries(this.rssItems[0]);
+        if (match) {
+          console.log('[AutoMatch] Found series:', match.title);
+          const seriesSelect = document.getElementById('series');
+          seriesSelect.value = match.title;
+          this.loadSeasons();
+          
+          // Show toast
+          const toast = document.createElement('div');
+          toast.className = 'position-fixed bottom-0 end-0 p-3';
+          toast.innerHTML = `
+            <div class="toast show bg-success text-white">
+              <div class="toast-body">
+                <i class="bi bi-magic"></i> 自动匹配到系列: ${match.title}
+              </div>
+            </div>`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3000);
+        }
+      }
+
       this.updateProxyUrl();
     } catch (error) {
       console.error('Failed to load RSS preview:', error);
@@ -1078,14 +1251,43 @@ setupEventListeners() {
     });
   }
 
-filterPatterns(query) {
-    const rows = document.querySelectorAll('#pattern-table-body tr');
+  filterPatterns(query) {
+    if (!this.allPatterns) return;
+
+    const statusFilter = document.getElementById('filter-status').value;
     const lowerQuery = query.toLowerCase();
 
-    rows.forEach(row => {
-      const text = row.textContent.toLowerCase();
-      row.style.display = text.includes(lowerQuery) ? '' : 'none';
+    const filtered = this.allPatterns.filter(pattern => {
+      // 1. 文本搜索过滤
+      const textMatch = !lowerQuery || 
+        pattern.series.toLowerCase().includes(lowerQuery) ||
+        pattern.pattern.toLowerCase().includes(lowerQuery) ||
+        (pattern.releasegroup && pattern.releasegroup.toLowerCase().includes(lowerQuery));
+
+      if (!textMatch) return false;
+
+      // 2. 状态过滤
+      if (statusFilter === 'all') return true;
+
+      const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
+      
+      if (statusFilter === 'not-found') {
+        return !series;
+      }
+      
+      if (statusFilter === 'case-mismatch') {
+        return series && series.title !== pattern.series;
+      }
+      
+      if (statusFilter === 'normal') {
+        return series && series.title === pattern.series;
+      }
+
+      return true;
     });
+
+    this.renderPatterns(filtered);
+    this.updateBatchUI(); // 更新批量操作UI状态
   }
 
   handleSortClick(th) {
