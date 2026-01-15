@@ -60,6 +60,17 @@ services:
 | `ADMIN_PASSWORD` | 管理员密码 | 是 | `your_secure_password` |
 | `PORT` | 服务端口 | 否 | `12306` |
 
+### OIDC SSO 配置（可选）
+
+| 变量名 | 说明 |
+|--------|------|
+| `OIDC_CLIENT_ID` | OAuth2 Client ID |
+| `OIDC_CLIENT_SECRET` | OAuth2 Client Secret |
+| `OIDC_AUTH_URL` | 认证地址 (e.g. `https://auth.example.com/application/o/authorize/`) |
+| `OIDC_TOKEN_URL` | Token 地址 (e.g. `https://auth.example.com/application/o/token/`) |
+| `OIDC_REDIRECT_URI` | 回调地址 (e.g. `https://mikanarr.example.com/auth/oidc/callback`) |
+| `OIDC_AUTO_LOGIN` | 设为 `true` 则自动跳转 SSO，隐藏登录表单 |
+
 ### 高级部署 (Traefik 示例)
 
 ```yaml
