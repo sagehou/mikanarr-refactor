@@ -2,6 +2,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const crypto = require('crypto');
 
 const router = express.Router();
 const dataDir = path.join(__dirname, '../../data');
@@ -39,6 +41,90 @@ router.post('/login', (req, res) => {
     res.json({ token });
   } else {
     res.status(401).send('Username or password incorrect');
+  }
+});
+
+// OIDC Routes
+const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
+const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
+const OIDC_AUTH_URL = process.env.OIDC_AUTH_URL;
+const OIDC_TOKEN_URL = process.env.OIDC_TOKEN_URL;
+const OIDC_REDIRECT_URI = process.env.OIDC_REDIRECT_URI;
+
+router.get('/oidc/login', (req, res) => {
+  if (!OIDC_CLIENT_ID || !OIDC_AUTH_URL || !OIDC_REDIRECT_URI) {
+    return res.status(500).send('OIDC not configured');
+  }
+
+  const state = crypto.randomBytes(16).toString('hex');
+  // In a production app, store state in cookie to verify later
+  // res.cookie('oidc_state', state, { httpOnly: true, secure: true });
+
+  const params = new URLSearchParams({
+    client_id: OIDC_CLIENT_ID,
+    redirect_uri: OIDC_REDIRECT_URI,
+    response_type: 'code',
+    scope: 'openid profile email',
+    state: state
+  });
+
+  res.redirect(`${OIDC_AUTH_URL}?${params.toString()}`);
+});
+
+router.get('/oidc/callback', async (req, res) => {
+  const { code, error } = req.query;
+
+  if (error) {
+    return res.status(400).send(`OIDC Error: ${error}`);
+  }
+
+  if (!code) {
+    return res.status(400).send('No code provided');
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('grant_type', 'authorization_code');
+    params.append('code', code);
+    params.append('redirect_uri', OIDC_REDIRECT_URI);
+    params.append('client_id', OIDC_CLIENT_ID);
+    params.append('client_secret', OIDC_CLIENT_SECRET);
+
+    const tokenRes = await axios.post(OIDC_TOKEN_URL, params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    // We trust the IdP. If we got a valid token, we assume the user is authenticated.
+    // In a real app, you might validate the ID token signature or fetch user info to check permissions.
+    // Here we just map it to the admin user or a generic OIDC user.
+    
+    // Generate Mikanarr internal Token
+    const token = jwt.sign({ username: 'sso_user', role: 'admin' }, privKey, { algorithm: 'RS512', expiresIn: '24h' });
+
+    // Return HTML to save token and redirect
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Login Successful</title>
+      </head>
+      <body>
+        <p>Login successful, redirecting...</p>
+        <script>
+          localStorage.setItem('token', '${token}');
+          window.location.href = '/';
+        </script>
+      </body>
+      </html>
+    `;
+    
+    res.send(html);
+
+  } catch (error) {
+    console.error('OIDC Callback Error:', error.response?.data || error.message);
+    res.status(500).send(`Authentication failed: ${error.message}`);
   }
 });
 

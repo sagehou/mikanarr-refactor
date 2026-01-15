@@ -12,8 +12,24 @@ class MikanarrApp {
 
   init() {
     this.initTheme();
+    this.checkOidcConfig();
     this.checkAuth();
     this.setupEventListeners();
+  }
+
+  async checkOidcConfig() {
+    try {
+      const response = await fetch('/auth/config');
+      if (response.ok) {
+        const config = await response.json();
+        if (config.oidcEnabled) {
+          const container = document.getElementById('oidc-login-container');
+          if (container) container.classList.remove('d-none');
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to check OIDC config:', e);
+    }
   }
 
   initTheme() {
