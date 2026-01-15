@@ -74,7 +74,25 @@ body {
 
 /* Navbar specific override */
 .navbar-dark.bg-primary {
-  background: linear-gradient(to right, #6b4c3e, #8a5a44) !important;
+  background: linear-gradient(to right, #a1887f, #bcaaa4) !important; /* Lighter Mocha/Latte */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Ensure navbar text is readable on lighter background */
+.navbar-dark .navbar-brand,
+.navbar-dark .nav-link, 
+.navbar-dark .btn-outline-light {
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.navbar-dark .btn-outline-light {
+  border-color: rgba(255,255,255,0.6);
+}
+
+.navbar-dark .btn-outline-light:hover {
+  background-color: rgba(255,255,255,0.2);
+  border-color: #fff;
 }
 
 /* Badge styling tweaks */
