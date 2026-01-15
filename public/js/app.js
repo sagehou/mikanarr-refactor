@@ -342,7 +342,7 @@ setupEventListeners() {
     const tbody = document.getElementById('pattern-table-body');
     tbody.innerHTML = '';
     
-    patterns.forEach((pattern, index) => {
+    patterns.forEach(pattern => {
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
@@ -393,7 +393,7 @@ setupEventListeners() {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="checkbox" class="form-check-input row-checkbox" data-id="${pattern.id}"></td>
-        <td>${index + 1}</td>
+        <td>${pattern.id}</td>
         <td>${matchIcon}<strong>${this.escapeHtml(displayName)}</strong></td>
         <td><span class="badge bg-secondary">S${pattern.season}</span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
