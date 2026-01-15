@@ -284,12 +284,6 @@ setupEventListeners() {
     this.renderSearchResults();
   }
 
-    } catch (error) {
-      console.error('[searchSonarrSeries] Error:', error);
-      resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
-    }
-  }
-
   loadSonarrImage(series) {
     const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
     if (!img) return;
