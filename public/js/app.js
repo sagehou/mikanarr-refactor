@@ -1352,16 +1352,21 @@ setupEventListeners() {
       mergedOptions.body = options.body;
     }
 
-    const response = await fetch(url, mergedOptions);
+    try {
+      const response = await fetch(url, mergedOptions);
 
-    // Check if response is HTML (likely an error page)
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('text/html')) {
-      console.error('[apiRequest] Received HTML instead of JSON:', url, response.status);
-      throw new Error('Server returned HTML instead of JSON (likely a server error)');
+      // Check if response is HTML (likely an error page)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        console.error('[apiRequest] Received HTML instead of JSON:', url, response.status);
+        throw new Error('Server returned HTML instead of JSON (likely a server error)');
+      }
+
+      return response;
+    } catch (error) {
+      console.error(`[apiRequest] Error fetching ${url}:`, error);
+      throw error;
     }
-
-    return response;
   }
 
   escapeHtml(text) {

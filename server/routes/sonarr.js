@@ -17,6 +17,7 @@ if (!SONARR_API_KEY || !SONARR_HOST) {
   router.use('/', createProxyMiddleware({
     target: SONARR_HOST,
     changeOrigin: true,
+    secure: false,
     pathRewrite(path, req) {
       // req.url in express router does not include the mount point (/sonarr)
       // path argument might be the same as req.url
