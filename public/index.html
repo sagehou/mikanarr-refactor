@@ -179,7 +179,14 @@
                       <label for="pattern" class="form-label">Pattern (正则表达式)</label>
                       <textarea class="form-control font-monospace" id="pattern" rows="3" 
                         placeholder="\[Lilith-Raws\] (?<series>.+) - (?<episode>\d+) ..." required></textarea>
-                      <div class="mt-2">
+                      <div class="mt-2 d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-info" id="ai-generate-btn" title="智能分析RSS生成正则">
+                          <i class="bi bi-stars"></i> AI生成
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="template-btn" title="从模板库选择">
+                          <i class="bi bi-collection"></i> 模板库
+                        </button>
+                        <div class="vr"></div>
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="escape-btn">
                           <i class="bi bi-code-slash"></i> Escape
                         </button>
@@ -208,6 +215,32 @@
                           <button class="btn btn-outline-success" type="button" id="form-add-series-btn" title="在Sonarr中添加新剧集">
                             <i class="bi bi-plus-lg"></i>
                           </button>
+                        </div>
+                        <!-- Series Info Card -->
+                        <div id="series-info-card" class="series-info-card mt-2 d-none">
+                          <img id="series-poster" class="series-poster" src="" alt="Poster">
+                          <div class="series-info">
+                            <h6 id="series-title-zh"></h6>
+                            <div class="series-stats">
+                              <span class="series-stat downloaded" title="已下载">
+                                <i class="bi bi-check-circle-fill"></i> <span id="series-downloaded">0</span>
+                              </span>
+                              <span class="series-stat missing" title="缺失">
+                                <i class="bi bi-exclamation-circle-fill"></i> <span id="series-missing">0</span>
+                              </span>
+                              <span class="series-stat" title="总集数">
+                                <i class="bi bi-collection"></i> <span id="series-total">0</span> 集
+                              </span>
+                            </div>
+                            <div class="progress progress-thin mt-2">
+                              <div id="series-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <div class="mt-2">
+                              <a id="series-sonarr-link" href="#" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-box-arrow-up-right"></i> 在Sonarr中打开
+                              </a>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div class="col-md-6">
@@ -271,6 +304,26 @@
 
   <!-- Add Series Modal -->
   <div class="modal fade" id="add-series-modal" tabindex="-1">
+
+  <!-- Pattern Template Library Modal -->
+  <div class="modal fade" id="template-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-collection"></i> Pattern 模板库</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <input type="text" class="form-control" id="template-search" placeholder="搜索模板...">
+          </div>
+          <div id="template-list" class="list-group">
+            <!-- Templates will be rendered here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">

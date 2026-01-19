@@ -771,3 +771,119 @@ select:focus {
   display: block;
 }
 
+/* ===== Template Library ===== */
+#template-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+#template-list .list-group-item.bg-light {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.template-item {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.template-item:hover {
+  background-color: var(--bg-hover);
+  transform: translateX(4px);
+}
+
+.template-item code {
+  background-color: var(--bg-table-header);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: var(--accent-color);
+}
+
+/* ===== AI Generate Button Animation ===== */
+#ai-generate-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+#ai-generate-btn::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transform: rotate(45deg);
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) rotate(45deg); }
+}
+
+/* ===== Series Card with Poster (Sonarr Integration) ===== */
+.series-info-card {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-hover);
+  border-radius: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.series-poster {
+  width: 80px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.series-info {
+  flex: 1;
+}
+
+.series-info h6 {
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.series-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.series-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.series-stat i {
+  font-size: 1rem;
+}
+
+.series-stat.missing {
+  color: #b95c50;
+}
+
+.series-stat.downloaded {
+  color: #728c69;
+}
+
+.progress-thin {
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 0.5rem;
+}
+

@@ -218,7 +218,10 @@ setupEventListeners() {
     document.getElementById('refresh-rss-btn').addEventListener('click', () => this.loadRssPreview());
     document.getElementById('escape-btn').addEventListener('click', () => this.escapePattern());
     document.getElementById('episode-btn').addEventListener('click', () => this.copyEpisode());
-    document.getElementById('series').addEventListener('change', () => this.loadSeasons());
+    document.getElementById('series').addEventListener('change', () => {
+      this.loadSeasons();
+      this.updateSeriesInfoCard();
+    });
     document.getElementById('pattern').addEventListener('input', () => this.updateRssPreview());
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
@@ -260,6 +263,11 @@ setupEventListeners() {
     
     // Pattern测试按钮
     document.getElementById('test-pattern-btn').addEventListener('click', () => this.testPattern());
+    
+    // AI生成和模板库
+    document.getElementById('ai-generate-btn').addEventListener('click', () => this.aiGeneratePattern());
+    document.getElementById('template-btn').addEventListener('click', () => this.showTemplateLibrary());
+    document.getElementById('template-search').addEventListener('input', (e) => this.filterTemplates(e.target.value));
     
     // Add Series Modal Events
     document.getElementById('sonarr-search-btn').addEventListener('click', () => this.searchSonarrSeries());
@@ -866,6 +874,97 @@ setupEventListeners() {
     });
     
     console.log('[renderSeriesOptions] Series options added to select element');
+  }
+
+  // ===== Sonarr Deep Integration - Series Info Card =====
+  async updateSeriesInfoCard() {
+    const seriesTitle = document.getElementById('series').value;
+    const cardDiv = document.getElementById('series-info-card');
+    
+    if (!seriesTitle) {
+      cardDiv.classList.add('d-none');
+      return;
+    }
+
+    const series = this.seriesList.find(s => s.title.toLowerCase() === seriesTitle.toLowerCase());
+    if (!series) {
+      cardDiv.classList.add('d-none');
+      return;
+    }
+
+    // Show card
+    cardDiv.classList.remove('d-none');
+
+    // Update poster
+    const posterImg = document.getElementById('series-poster');
+    let posterUrl = null;
+
+    // Try TMDB first
+    if (series.tmdbId) {
+      try {
+        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
+        if (response.ok) {
+          const tmdbData = await response.json();
+          if (tmdbData.poster_path) {
+            posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
+          }
+        }
+      } catch (e) {
+        console.warn('[updateSeriesInfoCard] TMDB fetch failed:', e);
+      }
+    }
+
+    // Fallback to Sonarr poster
+    if (!posterUrl) {
+      const poster = series.images?.find(i => i.coverType === 'poster');
+      if (poster) {
+        posterUrl = poster.remoteUrl || poster.url;
+        if (posterUrl?.startsWith('/')) {
+          posterUrl = `${this.sonarrHost}${posterUrl}`;
+        }
+      }
+    }
+
+    posterImg.src = posterUrl || 'https://via.placeholder.com/80x120?text=No+Poster';
+
+    // Update title (Chinese name if available)
+    const zhName = series.tmdbId ? this.tmdbCache[series.tmdbId] : null;
+    document.getElementById('series-title-zh').textContent = zhName || series.title;
+
+    // Calculate episode stats
+    let totalEpisodes = 0;
+    let downloadedEpisodes = 0;
+    let missingEpisodes = 0;
+
+    if (series.statistics) {
+      totalEpisodes = series.statistics.totalEpisodeCount || 0;
+      downloadedEpisodes = series.statistics.episodeFileCount || 0;
+      missingEpisodes = (series.statistics.episodeCount || 0) - downloadedEpisodes;
+    } else if (series.seasons) {
+      series.seasons.forEach(season => {
+        if (season.statistics) {
+          totalEpisodes += season.statistics.totalEpisodeCount || 0;
+          downloadedEpisodes += season.statistics.episodeFileCount || 0;
+        }
+      });
+      missingEpisodes = totalEpisodes - downloadedEpisodes;
+    }
+
+    document.getElementById('series-downloaded').textContent = downloadedEpisodes;
+    document.getElementById('series-missing').textContent = Math.max(0, missingEpisodes);
+    document.getElementById('series-total').textContent = totalEpisodes;
+
+    // Update progress bar
+    const progress = totalEpisodes > 0 ? (downloadedEpisodes / totalEpisodes) * 100 : 0;
+    document.getElementById('series-progress').style.width = `${progress}%`;
+
+    // Update Sonarr link
+    if (series.titleSlug && this.sonarrHost) {
+      document.getElementById('series-sonarr-link').href = `${this.sonarrHost}/series/${series.titleSlug}`;
+      document.getElementById('series-sonarr-link').classList.remove('d-none');
+    } else {
+      document.getElementById('series-sonarr-link').classList.add('d-none');
+    }
   }
 
   async loadSeasons(targetSeason = null) {
@@ -2025,6 +2124,372 @@ setupEventListeners() {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  // ===== Pattern Template Library =====
+  patternTemplates = [
+    {
+      name: 'ANi',
+      group: 'ANi',
+      description: 'ANi字幕组标准格式',
+      pattern: '\\[ANi\\] (?<series>.+?) - (?<episode>\\d+) \\[1080P\\]\\[Baha\\]\\[WEB-DL\\]\\[AAC AVC\\]\\[CHT\\]\\[MP4\\]',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: 'Lilith-Raws',
+      group: 'Lilith-Raws',
+      description: 'Lilith-Raws字幕组标准格式',
+      pattern: '\\[Lilith-Raws\\] (?<series>.+?) - (?<episode>\\d+) \\[Baha\\]\\[WEB-DL\\]\\[1080p\\]\\[AVC AAC\\]\\[CHT\\]\\[MP4\\]',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: 'Lilith-Raws (简化)',
+      group: 'Lilith-Raws',
+      description: 'Lilith-Raws简化匹配',
+      pattern: '\\[Lilith-Raws\\] (?<series>.+?) - (?<episode>\\d+) .*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: 'LoliHouse',
+      group: 'LoliHouse',
+      description: 'LoliHouse字幕组',
+      pattern: '\\[LoliHouse\\] (?<series>.+?) - (?<episode>\\d+) .*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: '喵萌奶茶屋',
+      group: '喵萌奶茶屋',
+      description: '喵萌奶茶屋字幕组',
+      pattern: '【喵萌奶茶屋】★.+?★(?<series>.+?)\\[(?<episode>\\d+)\\].*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: '桜都字幕组',
+      group: '桜都字幕组',
+      description: '桜都字幕组标准格式',
+      pattern: '\\[桜都字幕组\\] (?<series>.+?) \\/ .+? \\[(?<episode>\\d+)\\].*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: 'NC-Raws',
+      group: 'NC-Raws',
+      description: 'NC-Raws生肉组',
+      pattern: '\\[NC-Raws\\] (?<series>.+?) - (?<episode>\\d+) .*',
+      quality: 'WEBDL 1080p',
+      language: 'Japanese'
+    },
+    {
+      name: 'SubsPlease',
+      group: 'SubsPlease',
+      description: 'SubsPlease英字组',
+      pattern: '\\[SubsPlease\\] (?<series>.+?) - (?<episode>\\d+) \\(1080p\\).*',
+      quality: 'WEBDL 1080p',
+      language: 'English'
+    },
+    {
+      name: 'Erai-raws',
+      group: 'Erai-raws',
+      description: 'Erai-raws多语言组',
+      pattern: '\\[Erai-raws\\] (?<series>.+?) - (?<episode>\\d+) .*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: '动漫国字幕组',
+      group: '动漫国字幕组',
+      description: '动漫国字幕组',
+      pattern: '\\[动漫国字幕组\\]★.+?(?<series>.+?)\\[(?<episode>\\d+)\\].*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: '通用 - 方括号集数',
+      group: '通用',
+      description: '匹配 [系列名][01] 格式',
+      pattern: '(?<series>.+?)\\[(?<episode>\\d+)\\].*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    },
+    {
+      name: '通用 - 横杠集数',
+      group: '通用',
+      description: '匹配 系列名 - 01 格式',
+      pattern: '(?<series>.+?) - (?<episode>\\d+).*',
+      quality: 'WEBDL 1080p',
+      language: 'Chinese'
+    }
+  ];
+
+  showTemplateLibrary() {
+    const modal = new window.bootstrap.Modal(document.getElementById('template-modal'));
+    this.renderTemplates(this.patternTemplates);
+    modal.show();
+  }
+
+  renderTemplates(templates) {
+    const listDiv = document.getElementById('template-list');
+    
+    // Group templates by group name
+    const groups = {};
+    templates.forEach(t => {
+      if (!groups[t.group]) groups[t.group] = [];
+      groups[t.group].push(t);
+    });
+
+    let html = '';
+    for (const [groupName, groupTemplates] of Object.entries(groups)) {
+      html += `<div class="list-group-item bg-light fw-bold text-muted small">${groupName}</div>`;
+      groupTemplates.forEach((t, i) => {
+        html += `
+          <button type="button" class="list-group-item list-group-item-action template-item" 
+            data-pattern="${this.escapeHtml(t.pattern)}"
+            data-quality="${this.escapeHtml(t.quality)}"
+            data-language="${this.escapeHtml(t.language)}"
+            data-group="${this.escapeHtml(t.group)}">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>${this.escapeHtml(t.name)}</strong>
+                <br><small class="text-muted">${this.escapeHtml(t.description)}</small>
+              </div>
+              <span class="badge bg-secondary">${this.escapeHtml(t.language)}</span>
+            </div>
+            <code class="small d-block mt-1 text-truncate" style="max-width: 100%;">${this.escapeHtml(t.pattern)}</code>
+          </button>
+        `;
+      });
+    }
+
+    listDiv.innerHTML = html;
+
+    // Add click handlers
+    listDiv.querySelectorAll('.template-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.getElementById('pattern').value = item.dataset.pattern;
+        document.getElementById('quality').value = item.dataset.quality;
+        document.getElementById('language').value = item.dataset.language;
+        document.getElementById('releasegroup').value = item.dataset.group;
+        
+        window.bootstrap.Modal.getInstance(document.getElementById('template-modal')).hide();
+        Toast.success(`已应用模板: ${item.querySelector('strong').textContent}`);
+        this.updateRssPreview();
+      });
+    });
+  }
+
+  filterTemplates(query) {
+    const lowerQuery = query.toLowerCase();
+    const filtered = this.patternTemplates.filter(t => 
+      t.name.toLowerCase().includes(lowerQuery) ||
+      t.group.toLowerCase().includes(lowerQuery) ||
+      t.description.toLowerCase().includes(lowerQuery)
+    );
+    this.renderTemplates(filtered);
+  }
+
+  // ===== AI Pattern Generation =====
+  aiGeneratePattern() {
+    if (!this.rssItems || this.rssItems.length === 0) {
+      Toast.warning('请先加载RSS内容');
+      return;
+    }
+
+    const btn = document.getElementById('ai-generate-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner me-1"></span> 分析中...';
+
+    try {
+      // Analyze RSS items to find common patterns
+      const analysis = this.analyzeRssItems(this.rssItems);
+      
+      if (analysis.pattern) {
+        document.getElementById('pattern').value = analysis.pattern;
+        
+        if (analysis.group) {
+          document.getElementById('releasegroup').value = analysis.group;
+        }
+        if (analysis.quality) {
+          document.getElementById('quality').value = analysis.quality;
+        }
+        if (analysis.language) {
+          document.getElementById('language').value = analysis.language;
+        }
+        
+        this.updateRssPreview();
+        this.testPattern();
+        
+        Toast.success(`AI生成成功！检测到字幕组: ${analysis.group || '未知'}`);
+      } else {
+        Toast.warning('无法自动识别格式，请手动编写或使用模板');
+      }
+    } catch (error) {
+      console.error('[aiGeneratePattern] Error:', error);
+      Toast.error('分析失败: ' + error.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-stars"></i> AI生成';
+    }
+  }
+
+  analyzeRssItems(items) {
+    if (!items || items.length === 0) return {};
+
+    const firstItem = items[0];
+    
+    // Common subgroup patterns
+    const subgroupPatterns = [
+      { regex: /^\[ANi\]/, group: 'ANi', template: 'ani' },
+      { regex: /^\[Lilith-Raws\]/, group: 'Lilith-Raws', template: 'lilith' },
+      { regex: /^\[LoliHouse\]/, group: 'LoliHouse', template: 'lolihouse' },
+      { regex: /^\[NC-Raws\]/, group: 'NC-Raws', template: 'nc' },
+      { regex: /^\[SubsPlease\]/, group: 'SubsPlease', template: 'subsplease' },
+      { regex: /^\[Erai-raws\]/, group: 'Erai-raws', template: 'erai' },
+      { regex: /^【喵萌奶茶屋】/, group: '喵萌奶茶屋', template: 'nekomoe' },
+      { regex: /^\[桜都字幕组\]/, group: '桜都字幕组', template: 'sakura' },
+      { regex: /^\[动漫国字幕组\]/, group: '动漫国字幕组', template: 'dmguo' },
+    ];
+
+    // Detect subgroup
+    let detectedGroup = null;
+    let template = null;
+    for (const sp of subgroupPatterns) {
+      if (sp.regex.test(firstItem)) {
+        detectedGroup = sp.group;
+        template = sp.template;
+        break;
+      }
+    }
+
+    // Quality detection
+    let quality = 'WEBDL 1080p';
+    if (/4K|2160p/i.test(firstItem)) quality = 'WEBDL 2160p';
+    else if (/720p/i.test(firstItem)) quality = 'WEBDL 720p';
+    else if (/480p/i.test(firstItem)) quality = 'WEBDL 480p';
+
+    // Language detection
+    let language = 'Chinese';
+    if (/\[ENG\]|\[English\]/i.test(firstItem)) language = 'English';
+    else if (/\[JPN\]|\[Japanese\]|生肉/i.test(firstItem)) language = 'Japanese';
+    else if (/繁體|CHT|BIG5/i.test(firstItem)) language = 'Chinese';
+    else if (/简体|CHS|GB/i.test(firstItem)) language = 'Chinese';
+
+    // Try to find a matching template
+    if (detectedGroup) {
+      const matchedTemplate = this.patternTemplates.find(t => t.group === detectedGroup);
+      if (matchedTemplate) {
+        // Verify this template matches the items
+        try {
+          const testRegex = new RegExp(`^${matchedTemplate.pattern}$`);
+          const matchCount = items.filter(item => testRegex.test(item)).length;
+          
+          if (matchCount > 0) {
+            return {
+              pattern: matchedTemplate.pattern,
+              group: detectedGroup,
+              quality: quality,
+              language: language
+            };
+          }
+        } catch (e) {
+          // Template doesn't match, continue to auto-generate
+        }
+      }
+    }
+
+    // Auto-generate pattern by analyzing the structure
+    const generatedPattern = this.generatePatternFromItems(items, detectedGroup);
+    
+    return {
+      pattern: generatedPattern,
+      group: detectedGroup,
+      quality: quality,
+      language: language
+    };
+  }
+
+  generatePatternFromItems(items, group) {
+    const firstItem = items[0];
+    
+    // Escape special regex characters
+    let pattern = firstItem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Find episode number (look for common patterns)
+    const episodePatterns = [
+      /( - )(\d{2,3})( )/,           // - 01 
+      /(\[)(\d{2,3})(\])/,           // [01]
+      /( )(\d{2,3})( \[)/,           // 01 [
+      /(第)(\d{1,3})(话|話|集)/,      // 第01话
+      /(E)(\d{2,3})( |\.)/i,         // E01
+      /(EP)(\d{2,3})( |\.)/i,        // EP01
+    ];
+
+    let episodeMatch = null;
+    let episodeIndex = -1;
+    
+    for (const ep of episodePatterns) {
+      const match = firstItem.match(ep);
+      if (match) {
+        episodeMatch = match;
+        episodeIndex = match.index;
+        break;
+      }
+    }
+
+    if (episodeMatch) {
+      // Replace episode number with capture group
+      const beforeEp = firstItem.substring(0, episodeMatch.index + episodeMatch[1].length);
+      const afterEp = firstItem.substring(episodeMatch.index + episodeMatch[0].length - episodeMatch[3].length);
+      
+      let escapedBefore = beforeEp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      let escapedAfter = afterEp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      
+      // Try to extract series name area
+      if (group) {
+        // Replace series name with capture group
+        const groupPattern = new RegExp(`^\\\\\\[${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\\\\\]\\s*`);
+        escapedBefore = escapedBefore.replace(groupPattern, `\\[${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\] `);
+        
+        // Find where series name likely ends (before the episode marker)
+        const seriesEndPatterns = [
+          / - (?<episode>\\d+)/,
+          / \\[(?<episode>\\d+)\\]/,
+        ];
+        
+        // Insert series capture group
+        const dashMatch = escapedBefore.match(/ - $/);
+        if (dashMatch) {
+          const groupPrefix = `\\[${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\] `;
+          escapedBefore = groupPrefix + '(?<series>.+?) - ';
+        } else {
+          // Try bracket style
+          const bracketMatch = escapedBefore.match(/ \\$/);
+          if (bracketMatch) {
+            const groupPrefix = `\\[${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\] `;
+            escapedBefore = groupPrefix + '(?<series>.+?) \\';
+          }
+        }
+      }
+      
+      // Build the pattern
+      pattern = escapedBefore + '(?<episode>\\d+)' + escapedAfter.substring(0, 30) + '.*';
+      
+      // Simplify the trailing part
+      pattern = pattern.replace(/(\.\*)+$/, '.*');
+    } else {
+      // Fallback: very generic pattern
+      if (group) {
+        pattern = `\\[${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\] (?<series>.+?) - (?<episode>\\d+).*`;
+      } else {
+        pattern = '(?<series>.+?) - (?<episode>\\d+).*';
+      }
+    }
+
+    return pattern;
   }
 }
 
