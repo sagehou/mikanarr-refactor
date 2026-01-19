@@ -1573,6 +1573,13 @@ setupEventListeners() {
     
     const form = document.getElementById('pattern-form');
     form.reset();
+    
+    // Clear previous RSS preview and test results
+    this.rssItems = [];
+    document.getElementById('rss-preview').innerHTML = '<p class="text-muted text-center">输入 RSS URL 加载预览</p>';
+    document.getElementById('pattern-test-result').classList.add('d-none');
+    document.getElementById('pattern-test-output').innerHTML = '';
+    document.getElementById('series-info-card').classList.add('d-none');
 
     if (pattern) {
       console.log('[showPatternEdit] Editing pattern:', pattern.series);
