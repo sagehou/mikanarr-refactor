@@ -1,3 +1,106 @@
+// ===== Toast Notification System =====
+class Toast {
+  static container = null;
+
+  static init() {
+    if (!this.container) {
+      this.container = document.createElement('div');
+      this.container.className = 'toast-container';
+      document.body.appendChild(this.container);
+    }
+  }
+
+  static show(message, type = 'info', duration = 3000) {
+    this.init();
+
+    const icons = {
+      success: 'bi-check-circle-fill',
+      error: 'bi-x-circle-fill',
+      warning: 'bi-exclamation-triangle-fill',
+      info: 'bi-info-circle-fill'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `toast-item toast-${type}`;
+    toast.innerHTML = `
+      <i class="bi ${icons[type]} toast-icon"></i>
+      <div class="toast-content">${message}</div>
+      <button class="toast-close"><i class="bi bi-x"></i></button>
+    `;
+
+    this.container.appendChild(toast);
+
+    const close = () => {
+      toast.classList.add('toast-leaving');
+      setTimeout(() => toast.remove(), 300);
+    };
+
+    toast.querySelector('.toast-close').addEventListener('click', close);
+
+    if (duration > 0) {
+      setTimeout(close, duration);
+    }
+
+    return toast;
+  }
+
+  static success(message, duration) { return this.show(message, 'success', duration); }
+  static error(message, duration) { return this.show(message, 'error', duration); }
+  static warning(message, duration) { return this.show(message, 'warning', duration); }
+  static info(message, duration) { return this.show(message, 'info', duration); }
+}
+
+// ===== Confirm Dialog =====
+class ConfirmDialog {
+  static show({ title, message, confirmText = '确认', cancelText = '取消', type = 'danger' }) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+
+      const icons = {
+        danger: 'bi-exclamation-triangle-fill',
+        warning: 'bi-question-circle-fill'
+      };
+
+      overlay.innerHTML = `
+        <div class="confirm-dialog">
+          <div class="confirm-dialog-icon ${type}">
+            <i class="bi ${icons[type]}"></i>
+          </div>
+          <div class="confirm-dialog-title">${title}</div>
+          <div class="confirm-dialog-message">${message}</div>
+          <div class="confirm-dialog-buttons">
+            <button class="btn btn-secondary" id="confirm-cancel">${cancelText}</button>
+            <button class="btn btn-${type === 'danger' ? 'danger' : 'warning'}" id="confirm-ok">${confirmText}</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(overlay);
+
+      const cleanup = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.querySelector('#confirm-ok').addEventListener('click', () => cleanup(true));
+      overlay.querySelector('#confirm-cancel').addEventListener('click', () => cleanup(false));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) cleanup(false);
+      });
+
+      // Handle Escape key
+      const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+          document.removeEventListener('keydown', handleEscape);
+          cleanup(false);
+        }
+      };
+      document.addEventListener('keydown', handleEscape);
+    });
+  }
+}
+
 class MikanarrApp {
   constructor() {
     this.token = localStorage.getItem('token');
@@ -15,6 +118,7 @@ class MikanarrApp {
     this.checkOidcConfig();
     this.checkAuth();
     this.setupEventListeners();
+    this.setupKeyboardShortcuts();
   }
 
   async checkOidcConfig() {
@@ -174,6 +278,54 @@ setupEventListeners() {
     document.querySelectorAll('.sortable').forEach(th => {
       th.addEventListener('click', () => this.handleSortClick(th));
     });
+  }
+
+  // ===== Keyboard Shortcuts =====
+  setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      // Skip if user is typing in an input
+      const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+      
+      // Escape - go back to list or close modals
+      if (e.key === 'Escape') {
+        const editPanel = document.getElementById('pattern-edit');
+        if (!editPanel.classList.contains('d-none')) {
+          this.showPatternList();
+          Toast.info('已返回列表');
+        }
+      }
+      
+      // Ctrl/Cmd + S - Save pattern
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        const editPanel = document.getElementById('pattern-edit');
+        if (!editPanel.classList.contains('d-none')) {
+          e.preventDefault();
+          document.getElementById('pattern-form').dispatchEvent(new Event('submit'));
+        }
+      }
+      
+      // Ctrl/Cmd + N - New pattern (when not typing)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n' && !isTyping) {
+        const listPanel = document.getElementById('pattern-list');
+        if (!listPanel.classList.contains('d-none')) {
+          e.preventDefault();
+          this.showPatternEdit();
+          Toast.info('新建 Pattern');
+        }
+      }
+      
+      // / - Focus search (when not typing)
+      if (e.key === '/' && !isTyping) {
+        e.preventDefault();
+        document.getElementById('search-input').focus();
+      }
+    });
+  }
+
+  // ===== Dynamic Page Title =====
+  updatePageTitle(suffix = '') {
+    const base = 'Mikanarr';
+    document.title = suffix ? `${suffix} - ${base}` : base;
   }
 
   // Add Series Logic
@@ -382,6 +534,9 @@ setupEventListeners() {
   }
 
   async loadPatterns() {
+    // Show skeleton loading
+    this.showSkeletonLoading();
+    
     try {
       const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
       const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
@@ -405,7 +560,29 @@ setupEventListeners() {
       console.error('Failed to load patterns:', error);
       this.allPatterns = [];
       this.renderPatterns([]);
+      Toast.error('加载 Patterns 失败');
     }
+  }
+
+  showSkeletonLoading() {
+    const tbody = document.getElementById('pattern-table-body');
+    let skeletonHtml = '';
+    for (let i = 0; i < 5; i++) {
+      skeletonHtml += `
+        <tr>
+          <td><div class="skeleton skeleton-cell-sm" style="height: 18px; width: 18px;"></div></td>
+          <td><div class="skeleton skeleton-cell-sm"></div></td>
+          <td><div class="skeleton skeleton-cell-xl"></div></td>
+          <td><div class="skeleton skeleton-cell-sm"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
+          <td><div class="skeleton skeleton-cell-lg"></div></td>
+        </tr>
+      `;
+    }
+    tbody.innerHTML = skeletonHtml;
   }
 
   // 当前排序状态
@@ -464,10 +641,10 @@ setupEventListeners() {
     const monitor = document.getElementById('sonarr-monitor').value;
     const seasonFolder = document.getElementById('sonarr-season-folder').checked;
 
-    if (!rootPath || !qualityProfileId) {
-      alert('请填写所有必填项');
-      return;
-    }
+      if (!rootPath || !qualityProfileId) {
+        Toast.warning('请填写所有必填项');
+        return;
+      }
 
     const submitBtn = document.getElementById('add-series-submit-btn');
     submitBtn.disabled = true;
@@ -521,15 +698,11 @@ setupEventListeners() {
       }
       
       // Show success message
-      const toast = document.createElement('div');
-      toast.className = 'position-fixed bottom-0 end-0 p-3';
-      toast.innerHTML = `<div class="toast show bg-success text-white"><div class="toast-body">成功添加剧集: ${this.escapeHtml(this.selectedSeries.title)}</div></div>`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      Toast.success(`成功添加剧集: ${this.escapeHtml(this.selectedSeries.title)}`);
 
     } catch (error) {
       console.error('[submitAddSeries] Error:', error);
-      alert('添加失败: ' + error.message);
+      Toast.error('添加失败: ' + error.message);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = '添加';
@@ -549,7 +722,7 @@ setupEventListeners() {
       this.renderSonarrOptions();
     } catch (error) {
       console.error('[loadSonarrOptions] Failed:', error);
-      alert('无法加载 Sonarr 配置，请检查连接');
+      Toast.error('无法加载 Sonarr 配置，请检查连接');
     }
   }
 
@@ -747,6 +920,38 @@ setupEventListeners() {
     const tbody = document.getElementById('pattern-table-body');
     tbody.innerHTML = '';
     
+    // Empty state
+    if (!patterns || patterns.length === 0) {
+      const isFiltered = document.getElementById('search-input').value || 
+                         document.getElementById('filter-status').value !== 'all';
+      
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <div class="empty-state-icon">
+                <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
+              </div>
+              <div class="empty-state-title">
+                ${isFiltered ? '没有找到匹配的 Pattern' : '还没有 Pattern'}
+              </div>
+              <div class="empty-state-description">
+                ${isFiltered 
+                  ? '尝试调整搜索条件或筛选器' 
+                  : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
+              </div>
+              ${!isFiltered ? `
+                <button class="btn btn-primary" onclick="app.showPatternEdit()">
+                  <i class="bi bi-plus-lg"></i> 新建 Pattern
+                </button>
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
     patterns.forEach(pattern => {
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
@@ -811,18 +1016,20 @@ setupEventListeners() {
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
         <td>${lastMatched}</td>
-        <td>${this.escapeHtml(pattern.releasegroup || '-')}</td>
+        <td class="hide-mobile">${this.escapeHtml(pattern.releasegroup || '-')}</td>
         <td class="text-nowrap">
-          ${copyUrlBtn}
-          ${sonarrBtn}
-          ${addBtn}
-          ${fixBtn}
-          <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}">
-            <i class="bi bi-pencil"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${pattern.id}">
-            <i class="bi bi-trash"></i>
-          </button>
+          <div class="action-buttons d-flex gap-1">
+            ${copyUrlBtn}
+            ${sonarrBtn}
+            ${addBtn}
+            ${fixBtn}
+            <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}" title="编辑">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${pattern.id}" title="删除">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
         </td>
       `;
       tbody.appendChild(tr);
@@ -859,18 +1066,21 @@ setupEventListeners() {
       await navigator.clipboard.writeText(proxyUrl);
       
       // Show brief feedback
-      const toast = document.createElement('div');
-      toast.className = 'position-fixed bottom-0 end-0 p-3';
-      toast.innerHTML = `<div class="toast show bg-success text-white"><div class="toast-body">已复制代理URL</div></div>`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 2000);
+      Toast.success('已复制代理URL');
     } catch (error) {
-      alert('复制失败: ' + error.message);
+      Toast.error('复制失败: ' + error.message);
     }
   }
 
   async fixPatternName(id, correctName) {
-    if (!confirm(`确定要将系列名修复为 "${correctName}" 吗？`)) return;
+    const confirmed = await ConfirmDialog.show({
+      title: '修复系列名',
+      message: `确定要将系列名修复为 "${correctName}" 吗？`,
+      confirmText: '修复',
+      cancelText: '取消',
+      type: 'warning'
+    });
+    if (!confirmed) return;
     
     try {
       // First get the current pattern
@@ -890,8 +1100,9 @@ setupEventListeners() {
       if (!response.ok) throw new Error('更新失败');
       
       this.loadPatterns();
+      Toast.success('系列名已修复');
     } catch (error) {
-      alert('修复失败: ' + error.message);
+      Toast.error('修复失败: ' + error.message);
     }
   }
 
@@ -944,15 +1155,23 @@ setupEventListeners() {
     
     if (ids.length === 0) return;
     
-    if (!confirm(`确定要删除选中的 ${ids.length} 个 Pattern 吗？`)) return;
+    const confirmed = await ConfirmDialog.show({
+      title: '批量删除',
+      message: `确定要删除选中的 ${ids.length} 个 Pattern 吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    });
+    if (!confirmed) return;
     
     try {
       for (const id of ids) {
         await this.apiRequest(`/api/patterns/${id}`, { method: 'DELETE' });
       }
       this.loadPatterns();
+      Toast.success(`已删除 ${ids.length} 个 Pattern`);
     } catch (error) {
-      alert('批量删除失败: ' + error.message);
+      Toast.error('批量删除失败: ' + error.message);
     }
   }
 
@@ -969,11 +1188,18 @@ setupEventListeners() {
     });
 
     if (fixable.length === 0) {
-      alert('选中的项目中没有需要修复名称的 Pattern');
+      Toast.info('选中的项目中没有需要修复名称的 Pattern');
       return;
     }
 
-    if (!confirm(`确定要修复选中的 ${fixable.length} 个 Pattern 的系列名吗？`)) return;
+    const confirmed = await ConfirmDialog.show({
+      title: '批量修复',
+      message: `确定要修复选中的 ${fixable.length} 个 Pattern 的系列名吗？`,
+      confirmText: '修复',
+      cancelText: '取消',
+      type: 'warning'
+    });
+    if (!confirmed) return;
 
     try {
       let successCount = 0;
@@ -991,9 +1217,9 @@ setupEventListeners() {
       }
       
       this.loadPatterns();
-      alert(`成功修复 ${successCount} 个 Pattern`);
+      Toast.success(`成功修复 ${successCount} 个 Pattern`);
     } catch (error) {
-      alert('批量修复失败: ' + error.message);
+      Toast.error('批量修复失败: ' + error.message);
     }
   }
 
@@ -1101,8 +1327,9 @@ setupEventListeners() {
       
       // Clear input
       document.getElementById('mikan-import').value = '';
+      Toast.success('已解析 Mikan URL');
     } else {
-      alert('无法解析URL，请确保是有效的Mikan RSS或番剧页面URL');
+      Toast.warning('无法解析URL，请确保是有效的Mikan RSS或番剧页面URL');
     }
   }
 
@@ -1224,19 +1451,31 @@ setupEventListeners() {
   }
 
   async deletePattern(id) {
-    if (!confirm('确定要删除这个 pattern 吗？')) return;
+    const confirmed = await ConfirmDialog.show({
+      title: '删除 Pattern',
+      message: '确定要删除这个 Pattern 吗？此操作不可撤销。',
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    });
+    if (!confirmed) return;
 
     try {
       await this.apiRequest(`/api/patterns/${id}`, { method: 'DELETE' });
       this.loadPatterns();
+      Toast.success('Pattern 已删除');
     } catch (error) {
       console.error('Failed to delete pattern:', error);
+      Toast.error('删除失败: ' + error.message);
     }
   }
 
   showPatternEdit(pattern = null) {
     document.getElementById('pattern-list').classList.add('d-none');
     document.getElementById('pattern-edit').classList.remove('d-none');
+    
+    // Update page title
+    this.updatePageTitle(pattern ? '编辑 Pattern' : '新建 Pattern');
     
     const form = document.getElementById('pattern-form');
     form.reset();
@@ -1272,6 +1511,7 @@ setupEventListeners() {
     document.getElementById('pattern-edit').classList.add('d-none');
     document.getElementById('pattern-list').classList.remove('d-none');
     this.currentPatternId = null;
+    this.updatePageTitle('Patterns');
   }
 
   async savePattern(e) {
@@ -1300,8 +1540,9 @@ setupEventListeners() {
       await this.apiRequest(url, { method, body: JSON.stringify(pattern) });
       this.showPatternList();
       this.loadPatterns();
+      Toast.success('Pattern 已保存');
     } catch (error) {
-      alert('保存失败: ' + error.message);
+      Toast.error('保存失败: ' + error.message);
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-check-lg"></i> 保存';
@@ -1360,16 +1601,7 @@ setupEventListeners() {
           this.loadSeasons();
           
           // Show toast
-          const toast = document.createElement('div');
-          toast.className = 'position-fixed bottom-0 end-0 p-3';
-          toast.innerHTML = `
-            <div class="toast show bg-success text-white">
-              <div class="toast-body">
-                <i class="bi bi-magic"></i> 自动匹配到系列: ${match.title}
-              </div>
-            </div>`;
-          document.body.appendChild(toast);
-          setTimeout(() => toast.remove(), 3000);
+          Toast.success(`自动匹配到系列: ${match.title}`);
         }
       }
 
@@ -1482,7 +1714,7 @@ setupEventListeners() {
   copyProxyUrl() {
     const url = document.getElementById('proxy-url').value;
     navigator.clipboard.writeText(url);
-    alert('Proxy URL 已复制到剪贴板');
+    Toast.success('Proxy URL 已复制到剪贴板');
   }
 
   async exportPatterns() {
@@ -1504,10 +1736,10 @@ setupEventListeners() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      alert('Patterns 导出成功！');
+      Toast.success('Patterns 导出成功！');
     } catch (error) {
       console.error('[exportPatterns] Failed:', error);
-      alert(`导出失败: ${error.message}`);
+      Toast.error(`导出失败: ${error.message}`);
     }
   }
 
@@ -1516,7 +1748,7 @@ setupEventListeners() {
     if (!file) return;
     
     if (!file.name.endsWith('.json')) {
-      alert('请选择 JSON 文件');
+      Toast.warning('请选择 JSON 文件');
       return;
     }
     
@@ -1550,18 +1782,16 @@ setupEventListeners() {
       const result = await response.json();
       
       if (result.success) {
-        let message = `导入完成！成功导入 ${result.importedCount} 个 patterns，${result.errorCount} 个错误`;
+        let message = `导入完成！成功导入 ${result.importedCount} 个 patterns`;
         if (result.mode === 'overwrite') {
-          message += '\n\n注意：所有现有数据已被覆盖，ID已重新排序从1开始';
-        } else {
-          message += '\n\n注意：数据已追加到现有patterns之后';
+          message += '（覆盖模式）';
         }
         
-        alert(message);
+        Toast.success(message);
         
         if (result.errors.length > 0) {
           console.error('Import errors:', result.errors);
-          alert('部分 patterns 导入失败，请查看控制台获取详细信息');
+          Toast.warning('部分 patterns 导入失败，请查看控制台');
         }
         
         this.loadPatterns();
@@ -1573,7 +1803,7 @@ setupEventListeners() {
       event.target.value = '';
     } catch (error) {
       console.error('[importPatterns] Failed:', error);
-      alert(`导入失败: ${error.message}`);
+      Toast.error(`导入失败: ${error.message}`);
     }
   }
 
