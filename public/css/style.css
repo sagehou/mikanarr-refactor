@@ -39,7 +39,67 @@ body {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #b07d62 0%, #8a5a44 100%);
+  position: relative;
+  overflow: hidden;
 }
+
+/* Add a subtle overlay texture or shape if possible, but pure CSS gradient is fine. 
+   Let's just make the login box nicer. */
+
+.login-box {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 2.5rem;
+  border-radius: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transform: translateY(0);
+  transition: transform 0.3s ease;
+}
+
+[data-theme="dark"] .login-box {
+  background: rgba(61, 50, 38, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.login-box:hover {
+  transform: translateY(-5px);
+}
+
+.login-box h2 {
+  color: var(--accent-color);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.btn {
+  border-radius: 0.6rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.form-control {
+  border-radius: 0.6rem;
+  padding: 0.6rem 1rem;
+}
+
+.input-group .btn {
+  z-index: 2;
+}
+
+/* Ensure navbar brand has some breathing room */
+.navbar-brand {
+  margin-right: 2rem;
+}
+
 
 /* Override Bootstrap default colors for Maillard theme */
 .bg-primary {
@@ -74,8 +134,18 @@ body {
 
 /* Navbar specific override */
 .navbar-dark.bg-primary {
-  background: linear-gradient(to right, #a1887f, #bcaaa4) !important; /* Lighter Mocha/Latte */
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  /* Glassmorphism effect */
+  background: linear-gradient(to right, rgba(161, 136, 127, 0.95), rgba(188, 170, 164, 0.95)) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.8rem 0;
+  transition: all 0.3s ease;
+}
+
+[data-theme="dark"] .navbar-dark.bg-primary {
+  background: linear-gradient(to right, rgba(166, 109, 83, 0.95), rgba(138, 90, 68, 0.95)) !important;
 }
 
 /* Ensure navbar text is readable on lighter background */
@@ -86,14 +156,52 @@ body {
   text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: 0.5px;
+}
+
+.navbar-nav .nav-link {
+  padding: 0.5rem 1rem !important;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.navbar-nav .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.navbar-nav .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
 .navbar-dark .btn-outline-light {
   border-color: rgba(255,255,255,0.6);
+  backdrop-filter: blur(4px);
 }
 
 .navbar-dark .btn-outline-light:hover {
-  background-color: rgba(255,255,255,0.2);
+  background-color: rgba(255,255,255,0.25);
   border-color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
+
+#theme-toggle {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#theme-toggle:hover {
+  transform: rotate(15deg) scale(1.1);
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 50%; 
+}
+
 
 /* Badge styling tweaks */
 .badge {
@@ -126,16 +234,29 @@ body {
 
 .card {
   border: none;
-  border-radius: 0.5rem;
-  box-shadow: 0 0.125rem 0.25rem var(--shadow-color);
-  margin-bottom: 1rem;
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px -10px var(--shadow-color), 0 5px 15px -5px rgba(0,0,0,0.02);
+  margin-bottom: 1.5rem;
   background-color: var(--bg-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden; /* Ensure content follows border radius */
+}
+
+/* Hover effect for interactive cards (if any) */
+.card.interactive:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px -10px var(--shadow-color);
 }
 
 .card-header {
   background-color: var(--bg-table-header);
   border-bottom: 1px solid var(--border-color);
   font-weight: 600;
+  padding: 1rem 1.5rem;
+}
+
+.card-body {
+  padding: 1.5rem;
 }
 
 .table {
@@ -149,11 +270,24 @@ body {
   border-bottom: 2px solid var(--border-color);
   font-weight: 600;
   color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  padding: 1rem 0.75rem;
+}
+
+.table tbody tr {
+  transition: background-color 0.2s ease;
 }
 
 .table tbody tr:hover {
   background-color: var(--bg-hover) !important;
   color: var(--text-primary);
+}
+
+.table td {
+  vertical-align: middle;
+  padding: 1rem 0.75rem;
 }
 
 .table td, .table th {
