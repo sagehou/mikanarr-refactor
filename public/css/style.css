@@ -833,7 +833,7 @@ select:focus {
 /* ===== Pattern Card Grid View ===== */
 .pattern-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 1rem;
   padding: 0.5rem 0;
 }
@@ -857,7 +857,7 @@ select:focus {
 .pattern-card-poster {
   position: relative;
   width: 100%;
-  height: 100px;
+  aspect-ratio: 2/3; /* 强制竖版比例 */
   overflow: hidden;
   background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg-table-header) 100%);
 }
@@ -886,16 +886,18 @@ select:focus {
 }
 
 .pattern-card-poster-placeholder i {
-  font-size: 1.5rem;
-  margin-bottom: 0.25rem;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
   opacity: 0.5;
 }
 
 .pattern-card-poster-placeholder span {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.6;
+  text-align: center;
+  padding: 0 0.5rem;
 }
 
 .pattern-card-poster-overlay {
@@ -903,8 +905,9 @@ select:focus {
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(transparent, rgba(0,0,0,0.8));
-  padding: 2rem 1rem 1rem;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  height: 50%;
+  pointer-events: none;
 }
 
 .pattern-card-season-badge {

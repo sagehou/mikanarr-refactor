@@ -1370,30 +1370,44 @@ setupEventListeners() {
     if (!img) return;
 
     try {
-      // Try TMDB first (use smaller image for compact cards)
+      // Try TMDB first (优先使用竖版 poster)
       if (series.tmdbId) {
         const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
         if (response.ok) {
           const tmdbData = await response.json();
-          if (tmdbData.backdrop_path) {
-            img.src = `https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`;
+          // 优先使用 poster_path (竖版)，其次才是 backdrop_path
+          // 使用 w154 尺寸，足够卡片展示且加载极快
+          if (tmdbData.poster_path) {
+            img.src = `https://image.tmdb.org/t/p/w154${tmdbData.poster_path}`;
             return;
-          } else if (tmdbData.poster_path) {
-            img.src = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
+          } else if (tmdbData.backdrop_path) {
+            // 如果只有横版图，使用 w300 裁剪
+            img.src = `https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`;
             return;
           }
         }
       }
 
-      // Fallback to Sonarr fanart/poster
-      const fanart = series.images?.find(i => i.coverType === 'fanart');
+      // Fallback to Sonarr (优先 Poster)
       const poster = series.images?.find(i => i.coverType === 'poster');
-      const imageUrl = fanart?.remoteUrl || fanart?.url || poster?.remoteUrl || poster?.url;
+      const fanart = series.images?.find(i => i.coverType === 'fanart');
+      
+      // 优先取 Poster (coverType === 'poster')
+      let imageUrl = poster?.remoteUrl || poster?.url;
+      
+      // 如果没有 Poster 才取 Fanart
+      if (!imageUrl) {
+        imageUrl = fanart?.remoteUrl || fanart?.url;
+      }
       
       if (imageUrl) {
         let finalUrl = imageUrl;
         if (finalUrl.startsWith('/')) {
           finalUrl = `${this.sonarrHost}${finalUrl}`;
+        }
+        // 如果是 Sonarr 内部代理图片，尝试添加 width 参数 (取决于 Sonarr 版本支持)
+        if (finalUrl.includes('/MediaCover')) {
+           finalUrl += '?width=200'; 
         }
         img.src = finalUrl;
       }
