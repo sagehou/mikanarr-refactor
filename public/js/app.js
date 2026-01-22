@@ -1172,6 +1172,25 @@ setupEventListeners() {
         <td><span class="badge bg-secondary">S${pattern.season}</span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
         <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
+        <td>
+          ${(() => {
+            if (series) {
+              const stats = this.getSeasonStats(series, pattern.season);
+              return `
+                <div class="d-flex flex-column" style="min-width: 100px;">
+                  <div class="d-flex justify-content-between small text-muted mb-1">
+                    <span>${stats.percent}%</span>
+                    <span>${stats.downloaded}/${stats.total}</span>
+                  </div>
+                  <div class="progress" style="height: 4px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: ${stats.percent}%"></div>
+                  </div>
+                </div>
+              `;
+            }
+            return '<span class="text-muted">-</span>';
+          })()}
+        </td>
         <td>${lastMatched}</td>
         <td class="hide-mobile">${this.escapeHtml(pattern.releasegroup || '-')}</td>
         <td class="text-nowrap">
@@ -1277,11 +1296,12 @@ setupEventListeners() {
     let missingEpisodes = 0;
     let progressPercent = 0;
 
-    if (series?.statistics) {
-      totalEpisodes = series.statistics.episodeCount || 0;
-      downloadedEpisodes = series.statistics.episodeFileCount || 0;
-      missingEpisodes = totalEpisodes - downloadedEpisodes;
-      progressPercent = totalEpisodes > 0 ? Math.round((downloadedEpisodes / totalEpisodes) * 100) : 0;
+    if (series) {
+      const stats = this.getSeasonStats(series, pattern.season);
+      downloadedEpisodes = stats.downloaded;
+      totalEpisodes = stats.total;
+      missingEpisodes = stats.missing;
+      progressPercent = stats.percent;
     }
 
     // Determine if we have poster available
@@ -2586,6 +2606,33 @@ setupEventListeners() {
       document.getElementById('releasegroup').value = detectedGroup;
       Toast.info(`检测到字幕组: ${detectedGroup}`);
     }
+  }
+
+  // Get stats for a specific season
+  getSeasonStats(series, seasonNumber) {
+    if (!series || !series.seasons) {
+      return { total: 0, downloaded: 0, missing: 0, percent: 0 };
+    }
+
+    // Ensure seasonNumber is an integer
+    const seasonNum = parseInt(seasonNumber);
+    const season = series.seasons.find(s => s.seasonNumber === seasonNum);
+    
+    if (!season || !season.statistics) {
+      return { total: 0, downloaded: 0, missing: 0, percent: 0 };
+    }
+
+    const total = season.statistics.episodeCount || 0;
+    const downloaded = season.statistics.episodeFileCount || 0;
+    
+    // In Sonarr v3, episodeFileCount is what we have. 
+    // totalEpisodeCount might include unmonitored ones.
+    // For simplicity, we use episodeCount as total.
+    
+    const missing = Math.max(0, total - downloaded);
+    const percent = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+
+    return { total, downloaded, missing, percent };
   }
 }
 
