@@ -830,6 +830,11 @@ select:focus {
   margin-top: 0.5rem;
 }
 
+/* Utility class for clickable elements */
+.cursor-pointer {
+  cursor: pointer;
+}
+
 /* ===== Pattern Card Grid View ===== */
 .pattern-card-grid {
   display: grid;
