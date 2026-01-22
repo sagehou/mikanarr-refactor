@@ -33,8 +33,7 @@ stages:
   - IMAGE_TAG_TIME="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}"
   - IMAGE_TAG_VERSION="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"
   - CACHE_IMAGE="${REGISTRY_IMAGE_NAME}:cache-${TAG_PERFIX}"
-  - export NAMES="${IMAGE_TAG_TIME},${IMAGE_TAG_VERSION}"
-  - echo "Building Names=${NAMES}"
+  - echo "Building and Pushing ${IMAGE_TAG_TIME}"
   - |
     buildctl-daemonless.sh build \
       --frontend=dockerfile.v0 \
@@ -42,7 +41,15 @@ stages:
       --local dockerfile=. \
       --import-cache type=registry,ref=${CACHE_IMAGE} \
       --export-cache type=registry,ref=${CACHE_IMAGE},mode=max \
-      --output "type=image,name=${NAMES},push=true"
+      --output type=image,name="${IMAGE_TAG_TIME}",push=true
+  - echo "Tagging and Pushing ${IMAGE_TAG_VERSION} (from cache)"
+  - |
+    buildctl-daemonless.sh build \
+      --frontend=dockerfile.v0 \
+      --local context=. \
+      --local dockerfile=. \
+      --import-cache type=registry,ref=${CACHE_IMAGE} \
+      --output type=image,name="${IMAGE_TAG_VERSION}",push=true
 
 publish-arm:
   extends: .publish
