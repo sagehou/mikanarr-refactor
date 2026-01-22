@@ -1,0 +1,15 @@
+{
+  "name": "Mikanarr",
+  "short_name": "Mikanarr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdfbf7",
+  "theme_color": "#b07d62",
+  "icons": [
+    {
+      "src": "/images/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
