@@ -2111,6 +2111,13 @@ setupEventListeners() {
     try {
       const response = await fetch(url, mergedOptions);
 
+      // Handle 401 Unauthorized - token expired or invalid
+      if (response.status === 401) {
+        console.warn('[apiRequest] Received 401 Unauthorized, token may be expired');
+        await this.handleAuthExpired();
+        throw new Error('Authentication expired, please login again');
+      }
+
       // Check if response is HTML (likely an error page)
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('text/html')) {
@@ -2123,6 +2130,40 @@ setupEventListeners() {
       console.error(`[apiRequest] Error fetching ${url}:`, error);
       throw error;
     }
+  }
+
+  // Handle authentication expiration - clear token and redirect to login
+  async handleAuthExpired() {
+    console.log('[handleAuthExpired] Clearing token and checking OIDC config...');
+    
+    // Clear local token
+    localStorage.removeItem('token');
+    this.token = null;
+
+    // Check if OIDC is enabled and auto-login is configured
+    try {
+      const response = await fetch('/auth/config');
+      if (response.ok) {
+        const config = await response.json();
+        if (config.oidcEnabled && config.oidcAutoLogin) {
+          console.log('[handleAuthExpired] OIDC auto-login enabled, redirecting to OIDC login...');
+          Toast.warning('Session expired, redirecting to login...');
+          // Small delay to show the toast before redirect
+          setTimeout(() => {
+            window.location.href = '/auth/oidc/login';
+          }, 500);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('[handleAuthExpired] Failed to check OIDC config:', e);
+    }
+
+    // Fallback: show login page
+    console.log('[handleAuthExpired] Showing login page');
+    Toast.warning('Session expired, please login again');
+    document.getElementById('main-container').classList.add('d-none');
+    document.getElementById('login-container').classList.remove('d-none');
   }
 
   escapeHtml(text) {
