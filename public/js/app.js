@@ -1269,23 +1269,30 @@ setupEventListeners() {
       progressPercent = totalEpisodes > 0 ? Math.round((downloadedEpisodes / totalEpisodes) * 100) : 0;
     }
 
-    // Get poster URL
-    let posterUrl = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="180" viewBox="0 0 280 180"%3E%3Crect fill="%23f5f0e6" width="280" height="180"/%3E%3Ctext fill="%239e9085" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
-    
-    if (series?.tmdbId) {
-      // Will be lazy loaded
-      posterUrl = `https://image.tmdb.org/t/p/w500/placeholder.jpg`;
-    }
+    // Determine if we have poster available
+    const hasPoster = series?.tmdbId || series?.images?.some(i => i.coverType === 'fanart' || i.coverType === 'poster');
 
     const card = document.createElement('div');
     card.className = 'pattern-card';
     card.dataset.patternId = pattern.id;
     card.dataset.tmdbId = series?.tmdbId || '';
 
+    // Build poster HTML - use placeholder div if no image available
+    let posterContent = '';
+    if (hasPoster) {
+      posterContent = `<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="${this.escapeHtml(pattern.series)}" loading="lazy">`;
+    } else {
+      posterContent = `
+        <div class="pattern-card-poster-placeholder">
+          <i class="bi bi-film"></i>
+          <span>${this.escapeHtml(pattern.series.substring(0, 12))}${pattern.series.length > 12 ? '...' : ''}</span>
+        </div>
+      `;
+    }
+
     card.innerHTML = `
       <div class="pattern-card-poster">
-        <img src="${posterUrl}" alt="${this.escapeHtml(pattern.series)}" loading="lazy">
-        <div class="pattern-card-poster-overlay"></div>
+        ${posterContent}
         <span class="pattern-card-season-badge">S${pattern.season}</span>
         ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
       </div>
@@ -1295,7 +1302,6 @@ setupEventListeners() {
         <div class="pattern-card-meta">
           <span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span>
           <span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span>
-          ${pattern.releasegroup ? `<span class="badge bg-secondary">${this.escapeHtml(pattern.releasegroup)}</span>` : ''}
         </div>
         ${series ? `
           <div class="pattern-card-progress">
@@ -1308,7 +1314,7 @@ setupEventListeners() {
                   <i class="bi bi-exclamation-circle"></i> ${Math.max(0, missingEpisodes)}
                 </span>
               </div>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">${progressPercent}%</span>
+              <span style="font-size: 0.65rem; color: var(--text-muted);">${progressPercent}%</span>
             </div>
             <div class="pattern-card-progress-bar">
               <div class="pattern-card-progress-bar-fill" style="width: ${progressPercent}%"></div>
@@ -1351,8 +1357,8 @@ setupEventListeners() {
       this.updateBatchUI();
     });
 
-    // Lazy load poster image
-    if (series?.tmdbId) {
+    // Lazy load poster image only if we expect one
+    if (hasPoster) {
       this.loadCardPoster(card, series);
     }
 
@@ -1364,16 +1370,16 @@ setupEventListeners() {
     if (!img) return;
 
     try {
-      // Try TMDB first
+      // Try TMDB first (use smaller image for compact cards)
       if (series.tmdbId) {
         const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
         if (response.ok) {
           const tmdbData = await response.json();
           if (tmdbData.backdrop_path) {
-            img.src = `https://image.tmdb.org/t/p/w780${tmdbData.backdrop_path}`;
+            img.src = `https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`;
             return;
           } else if (tmdbData.poster_path) {
-            img.src = `https://image.tmdb.org/t/p/w500${tmdbData.poster_path}`;
+            img.src = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
             return;
           }
         }
