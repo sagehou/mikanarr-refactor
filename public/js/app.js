@@ -215,6 +215,14 @@ setupEventListeners() {
     document.getElementById('new-pattern-btn').addEventListener('click', () => this.showPatternEdit());
     document.getElementById('back-btn').addEventListener('click', () => this.showPatternList());
     document.getElementById('cancel-btn').addEventListener('click', () => this.showPatternList());
+    // 编辑页面删除按钮
+    document.getElementById('edit-delete-btn').addEventListener('click', async () => {
+      if (this.currentPatternId) {
+        await this.deletePattern(this.currentPatternId);
+        // deletePattern will reload list, but we need to switch view manually if it doesn't
+        this.showPatternList();
+      }
+    });
     document.getElementById('pattern-form').addEventListener('submit', (e) => this.savePattern(e));
     document.getElementById('search-input').addEventListener('input', (e) => this.filterPatterns(e.target.value));
     document.getElementById('remote').addEventListener('input', () => this.debounceLoadRssPreview());
@@ -1925,9 +1933,14 @@ setupEventListeners() {
     document.getElementById('pattern-test-output').innerHTML = '';
     document.getElementById('series-info-card').classList.add('d-none');
 
+    const deleteBtn = document.getElementById('edit-delete-btn');
+
     if (pattern) {
       console.log('[showPatternEdit] Editing pattern:', pattern.series);
       document.getElementById('edit-title').textContent = '编辑 Pattern';
+      // Show delete button in edit mode
+      deleteBtn.classList.remove('d-none');
+      
       document.getElementById('pattern-id').value = pattern.id;
       document.getElementById('remote').value = pattern.remote || '';
       document.getElementById('pattern').value = pattern.pattern;
@@ -1943,6 +1956,9 @@ setupEventListeners() {
     } else {
       console.log('[showPatternEdit] Creating new pattern');
       document.getElementById('edit-title').textContent = '新建 Pattern';
+      // Hide delete button in create mode
+      deleteBtn.classList.add('d-none');
+
       document.getElementById('pattern-id').value = '';
       document.getElementById('language').value = 'Chinese';
       document.getElementById('quality').value = 'WEBDL 1080p';
