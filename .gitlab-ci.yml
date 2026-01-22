@@ -14,7 +14,7 @@ stages:
     BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
   before_script:
     - mkdir -p ~/.docker
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n $CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD | base64)\"}}}" > ~/.docker/config.json
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf "%s:%s" "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}" > ~/.docker/config.json
   script:
   - |
     if [ "$CI_COMMIT_REF_NAME" = $CI_DEFAULT_BRANCH ]; then
@@ -32,12 +32,15 @@ stages:
   - BUILD_TIME=`date +%Y%m%d_%H%M`
   - IMAGE_TAG_TIME="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}"
   - IMAGE_TAG_VERSION="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"
+  - CACHE_IMAGE="${REGISTRY_IMAGE_NAME}:cache-${TAG_PERFIX}"
   - echo "Building ${IMAGE_TAG_TIME} and ${IMAGE_TAG_VERSION}"
   - |
     buildctl-daemonless.sh build \
       --frontend=dockerfile.v0 \
       --local context=. \
       --local dockerfile=. \
+      --import-cache type=registry,ref=${CACHE_IMAGE} \
+      --export-cache type=registry,ref=${CACHE_IMAGE},mode=max \
       --output type=image,name="${IMAGE_TAG_TIME},${IMAGE_TAG_VERSION}",push=true
 
 publish-arm:
