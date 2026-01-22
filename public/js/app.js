@@ -267,6 +267,13 @@ setupEventListeners() {
     // Pattern测试按钮
     document.getElementById('test-pattern-btn').addEventListener('click', () => this.testPattern());
     
+    // 实时正则预览
+    document.getElementById('pattern').addEventListener('input', () => {
+      // 使用防抖以提高性能
+      clearTimeout(this.previewDebounceTimer);
+      this.previewDebounceTimer = setTimeout(() => this.renderRssPreview(), 300);
+    });
+    
     // Add Series Modal Events
     document.getElementById('sonarr-search-btn').addEventListener('click', () => this.searchSonarrSeries());
     document.getElementById('sonarr-search-input').addEventListener('keypress', (e) => {
@@ -1327,6 +1334,9 @@ setupEventListeners() {
           <input type="checkbox" class="form-check-input card-checkbox" data-id="${pattern.id}">
         </div>
         <div class="pattern-card-actions">
+          <button class="btn btn-sm btn-outline-secondary btn-card-copy" data-remote="${this.escapeHtml(pattern.remote || '')}" title="复制RSS链接">
+            <i class="bi bi-clipboard"></i>
+          </button>
           ${series?.titleSlug && this.sonarrHost ? `
             <a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
               <i class="bi bi-box-arrow-up-right"></i>
@@ -1349,8 +1359,48 @@ setupEventListeners() {
       this.editPattern(parseInt(card.dataset.patternId));
     };
 
+    // Touch gesture support (Swipe)
+    let touchStartX = 0;
+    let touchEndX = 0;
+    const swipeThreshold = 80;
+
+    card.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    card.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }, { passive: true });
+
+    const handleSwipe = () => {
+      const swipeDistance = touchEndX - touchStartX;
+      if (Math.abs(swipeDistance) > swipeThreshold) {
+        if (swipeDistance > 0) {
+          // Swipe Right -> Edit
+          this.editPattern(parseInt(card.dataset.patternId));
+        } else {
+          // Swipe Left -> Confirm Delete
+          // Visual feedback before action would be ideal, but for now direct action
+          if (confirm('确定要删除这个 Pattern 吗？(滑动触发)')) {
+             this.deletePattern(parseInt(card.dataset.patternId));
+          }
+        }
+      }
+    };
+
     card.querySelector('.pattern-card-poster').addEventListener('click', editHandler);
     card.querySelector('.pattern-card-body').addEventListener('click', editHandler);
+
+    card.querySelector('.btn-card-copy')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const remote = e.currentTarget.dataset.remote;
+      if (remote) {
+        await this.copyProxyUrlFromRemote(remote);
+      } else {
+        Toast.warning('无有效 RSS 链接');
+      }
+    });
 
     card.querySelector('.btn-card-edit')?.addEventListener('click', (e) => {
       e.stopPropagation();
