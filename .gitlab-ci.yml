@@ -9,19 +9,12 @@ stages:
 
 .publish:
   stage: publish
-  image: quay.io/buildah/stable
+  image: moby/buildkit:v0.12.5-rootless
   variables:
-    STORAGE_DRIVER: vfs
-    BUILDAH_FORMAT: docker
-    BUILDAH_ISOLATION: chroot
+    BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
   before_script:
-    - mkdir -p .config/containers
-    - echo '[storage]' > .config/containers/storage.conf
-    - echo 'driver = "vfs"' >> .config/containers/storage.conf
-    - echo 'runroot = "/tmp/run"' >> .config/containers/storage.conf
-    - echo 'graphroot = "/tmp/graph"' >> .config/containers/storage.conf
-    - export CONTAINERS_STORAGE_CONF=$PWD/.config/containers/storage.conf
-    - buildah login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    - mkdir -p ~/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n $CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD | base64)\"}}}" > ~/.docker/config.json
   script:
   - |
     if [ "$CI_COMMIT_REF_NAME" = $CI_DEFAULT_BRANCH ]; then
@@ -40,10 +33,12 @@ stages:
   - IMAGE_TAG_TIME="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}"
   - IMAGE_TAG_VERSION="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"
   - echo "Building ${IMAGE_TAG_TIME} and ${IMAGE_TAG_VERSION}"
-  - buildah build --isolation chroot --layers -f "${CI_PROJECT_DIR}/Dockerfile" -t "${IMAGE_TAG_TIME}" "${CI_PROJECT_DIR}"
-  - buildah push "${IMAGE_TAG_TIME}"
-  - buildah tag "${IMAGE_TAG_TIME}" "${IMAGE_TAG_VERSION}"
-  - buildah push "${IMAGE_TAG_VERSION}"
+  - |
+    buildctl-daemonless.sh build \
+      --frontend=dockerfile.v0 \
+      --local context=. \
+      --local dockerfile=. \
+      --output type=image,name="${IMAGE_TAG_TIME},${IMAGE_TAG_VERSION}",push=true
 
 publish-arm:
   extends: .publish
