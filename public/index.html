@@ -72,6 +72,16 @@
           <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Patterns</h2>
             <div class="d-flex gap-2 align-items-center flex-wrap">
+              <!-- 视图切换 -->
+              <div class="btn-group" role="group" aria-label="视图切换">
+                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图">
+                  <i class="bi bi-grid-3x3-gap"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图">
+                  <i class="bi bi-list"></i>
+                </button>
+              </div>
+              
               <div class="input-group" style="width: auto;">
                 <span class="input-group-text"><i class="bi bi-funnel"></i></span>
                 <select class="form-select" id="filter-status" style="max-width: 150px;">
@@ -105,7 +115,13 @@
             </div>
           </div>
 
-          <div class="card">
+          <!-- 卡片视图 -->
+          <div id="pattern-card-view" class="pattern-card-grid">
+            <!-- 卡片将由 JS 动态生成 -->
+          </div>
+
+          <!-- 表格视图 -->
+          <div id="pattern-table-view" class="card d-none">
             <div class="card-body">
               <div class="table-responsive">
                 <table class="table table-hover">
