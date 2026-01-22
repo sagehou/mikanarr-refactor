@@ -34,7 +34,7 @@ stages:
   - IMAGE_TAG_TIME="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}"
   - IMAGE_TAG_VERSION="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"
   - echo "Building ${IMAGE_TAG_TIME} and ${IMAGE_TAG_VERSION}"
-  - buildah build --layers -f "${CI_PROJECT_DIR}/Dockerfile" -t "${IMAGE_TAG_TIME}" "${CI_PROJECT_DIR}"
+  - buildah build --isolation chroot --layers -f "${CI_PROJECT_DIR}/Dockerfile" -t "${IMAGE_TAG_TIME}" "${CI_PROJECT_DIR}"
   - buildah push "${IMAGE_TAG_TIME}"
   - buildah tag "${IMAGE_TAG_TIME}" "${IMAGE_TAG_VERSION}"
   - buildah push "${IMAGE_TAG_VERSION}"
