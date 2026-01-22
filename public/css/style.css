@@ -1130,19 +1130,10 @@ select:focus {
 
 /* Responsive adjustments for cards */
 @media (max-width: 576px) {
+  /* On very small screens, allow cards to be smaller or 2 per row */
   .pattern-card-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-  
-  .pattern-card-poster {
-    height: 150px;
-  }
-}
-
-@media (min-width: 992px) {
-  .pattern-card-grid {
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
   }
 }
 
