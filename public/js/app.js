@@ -1291,12 +1291,12 @@ setupEventListeners() {
     }
 
     card.innerHTML = `
-      <div class="pattern-card-poster">
+      <div class="pattern-card-poster cursor-pointer">
         ${posterContent}
         <span class="pattern-card-season-badge">S${pattern.season}</span>
         ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
       </div>
-      <div class="pattern-card-body">
+      <div class="pattern-card-body cursor-pointer">
         <div class="pattern-card-title">${this.escapeHtml(pattern.series)}</div>
         ${zhName ? `<div class="pattern-card-title-zh">${this.escapeHtml(zhName)}</div>` : ''}
         <div class="pattern-card-meta">
@@ -1343,6 +1343,15 @@ setupEventListeners() {
     `;
 
     // Add event listeners
+    const editHandler = (e) => {
+      // Prevent bubbling if clicking on specific elements inside body
+      if (e.target.closest('.pattern-card-progress')) return;
+      this.editPattern(parseInt(card.dataset.patternId));
+    };
+
+    card.querySelector('.pattern-card-poster').addEventListener('click', editHandler);
+    card.querySelector('.pattern-card-body').addEventListener('click', editHandler);
+
     card.querySelector('.btn-card-edit')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.editPattern(parseInt(e.currentTarget.dataset.id));
