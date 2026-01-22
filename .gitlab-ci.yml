@@ -8,13 +8,13 @@ stages:
 - deploy
 
 .publish:
-  variables:
-    KANIKO_ARGS: ''
   stage: publish
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint:
-    - ''
+  image: quay.io/buildah/stable
+  variables:
+    STORAGE_DRIVER: vfs
+    BUILDAH_FORMAT: docker
+  before_script:
+    - buildah login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
   script:
   - |
     if [ "$CI_COMMIT_REF_NAME" = $CI_DEFAULT_BRANCH ]; then
@@ -30,11 +30,13 @@ stages:
     fi
   - echo $VERSION
   - BUILD_TIME=`date +%Y%m%d_%H%M`
-  - mkdir -p /kaniko/.docker
-  - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}"
-    "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
-  - '/kaniko/executor $KANIKO_ARGS --context "${CI_PROJECT_DIR}" --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-    --destination "${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}" --destination "${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"'
+  - IMAGE_TAG_TIME="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${BUILD_TIME}"
+  - IMAGE_TAG_VERSION="${REGISTRY_IMAGE_NAME}:${TAG_PERFIX}-${VERSION}"
+  - echo "Building ${IMAGE_TAG_TIME} and ${IMAGE_TAG_VERSION}"
+  - buildah build --layers -f "${CI_PROJECT_DIR}/Dockerfile" -t "${IMAGE_TAG_TIME}" "${CI_PROJECT_DIR}"
+  - buildah push "${IMAGE_TAG_TIME}"
+  - buildah tag "${IMAGE_TAG_TIME}" "${IMAGE_TAG_VERSION}"
+  - buildah push "${IMAGE_TAG_VERSION}"
 
 publish-arm:
   extends: .publish
