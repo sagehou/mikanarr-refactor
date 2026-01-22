@@ -833,31 +833,31 @@ select:focus {
 /* ===== Pattern Card Grid View ===== */
 .pattern-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
   padding: 0.5rem 0;
 }
 
 .pattern-card {
   background: var(--bg-card);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   overflow: hidden;
-  box-shadow: 0 4px 20px -5px var(--shadow-color);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 12px -4px var(--shadow-color);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   display: flex;
   flex-direction: column;
 }
 
 .pattern-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 20px 40px -10px var(--shadow-color);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px var(--shadow-color);
 }
 
 .pattern-card-poster {
   position: relative;
   width: 100%;
-  height: 180px;
+  height: 100px;
   overflow: hidden;
   background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg-table-header) 100%);
 }
@@ -866,11 +866,36 @@ select:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  transition: transform 0.4s ease;
 }
 
 .pattern-card:hover .pattern-card-poster img {
-  transform: scale(1.1);
+  transform: scale(1.05);
+}
+
+/* 找不到图片时的占位符样式 */
+.pattern-card-poster-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-table-header) 0%, var(--bg-hover) 100%);
+  color: var(--text-muted);
+}
+
+.pattern-card-poster-placeholder i {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
+  opacity: 0.5;
+}
+
+.pattern-card-poster-placeholder span {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.6;
 }
 
 .pattern-card-poster-overlay {
@@ -884,24 +909,24 @@ select:focus {
 
 .pattern-card-season-badge {
   position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
+  top: 0.5rem;
+  right: 0.5rem;
   background: rgba(0,0,0,0.7);
   backdrop-filter: blur(10px);
-  padding: 0.35rem 0.75rem;
-  border-radius: 2rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 1rem;
   color: #fff;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
 }
 
 .pattern-card-status-badge {
   position: absolute;
-  top: 0.75rem;
-  left: 0.75rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.5rem;
-  font-size: 0.75rem;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.35rem;
+  font-size: 0.6rem;
   font-weight: 500;
 }
 
@@ -921,18 +946,18 @@ select:focus {
 }
 
 .pattern-card-body {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
 .pattern-card-title {
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
   color: var(--text-primary);
-  line-height: 1.4;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -940,27 +965,30 @@ select:focus {
 }
 
 .pattern-card-title-zh {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pattern-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
 }
 
 .pattern-card-meta .badge {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.5rem;
+  font-size: 0.65rem;
+  padding: 0.2rem 0.35rem;
 }
 
 /* Sonarr Progress Integration */
 .pattern-card-progress {
   margin-top: auto;
-  padding-top: 0.75rem;
+  padding-top: 0.5rem;
   border-top: 1px solid var(--border-color);
 }
 
@@ -968,19 +996,19 @@ select:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
-  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.7rem;
 }
 
 .pattern-card-progress-stats {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .pattern-card-progress-stat {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
 .pattern-card-progress-stat.downloaded {
@@ -992,16 +1020,16 @@ select:focus {
 }
 
 .pattern-card-progress-bar {
-  height: 6px;
+  height: 4px;
   background: var(--bg-hover);
-  border-radius: 3px;
+  border-radius: 2px;
   overflow: hidden;
 }
 
 .pattern-card-progress-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, #728c69 0%, #8fa382 100%);
-  border-radius: 3px;
+  border-radius: 2px;
   transition: width 0.5s ease;
 }
 
@@ -1009,19 +1037,19 @@ select:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.25rem;
+  padding: 0.5rem 0.75rem;
   background: var(--bg-hover);
   border-top: 1px solid var(--border-color);
 }
 
 .pattern-card-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .pattern-card-actions .btn {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.85rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
 }
 
 .pattern-card-checkbox {
@@ -1032,18 +1060,18 @@ select:focus {
 /* Card Skeleton Loading */
 .pattern-card-skeleton {
   background: var(--bg-card);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   overflow: hidden;
-  box-shadow: 0 4px 20px -5px var(--shadow-color);
+  box-shadow: 0 2px 12px -4px var(--shadow-color);
 }
 
 .pattern-card-skeleton .skeleton-poster {
   width: 100%;
-  height: 180px;
+  height: 100px;
 }
 
 .pattern-card-skeleton .skeleton-body {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem;
 }
 
 .pattern-card-skeleton .skeleton-title {
