@@ -179,6 +179,9 @@ class MikanarrApp {
       document.getElementById('login-container').classList.add('d-none');
       document.getElementById('main-container').classList.remove('d-none');
       
+      // Initialize view preference
+      this.initView();
+      
       // Load config first
       await this.loadConfig();
       
@@ -281,6 +284,47 @@ setupEventListeners() {
     document.querySelectorAll('.sortable').forEach(th => {
       th.addEventListener('click', () => this.handleSortClick(th));
     });
+
+    // 视图切换事件
+    document.getElementById('view-card-btn').addEventListener('click', () => this.switchView('card'));
+    document.getElementById('view-table-btn').addEventListener('click', () => this.switchView('table'));
+  }
+
+  // ===== View Toggle =====
+  currentView = localStorage.getItem('patternView') || 'card';
+
+  switchView(view) {
+    this.currentView = view;
+    localStorage.setItem('patternView', view);
+    
+    const cardBtn = document.getElementById('view-card-btn');
+    const tableBtn = document.getElementById('view-table-btn');
+    const cardView = document.getElementById('pattern-card-view');
+    const tableView = document.getElementById('pattern-table-view');
+    
+    if (view === 'card') {
+      cardBtn.classList.add('active');
+      tableBtn.classList.remove('active');
+      cardView.classList.remove('d-none');
+      tableView.classList.add('d-none');
+    } else {
+      tableBtn.classList.add('active');
+      cardBtn.classList.remove('active');
+      tableView.classList.remove('d-none');
+      cardView.classList.add('d-none');
+    }
+    
+    // Re-render current view
+    this.filterPatterns(document.getElementById('search-input').value);
+  }
+
+  initView() {
+    // Initialize view based on saved preference
+    if (this.currentView === 'table') {
+      this.switchView('table');
+    } else {
+      this.switchView('card');
+    }
   }
 
   // ===== Keyboard Shortcuts =====
@@ -568,6 +612,7 @@ setupEventListeners() {
   }
 
   showSkeletonLoading() {
+    // Table skeleton
     const tbody = document.getElementById('pattern-table-body');
     let skeletonHtml = '';
     for (let i = 0; i < 5; i++) {
@@ -586,6 +631,9 @@ setupEventListeners() {
       `;
     }
     tbody.innerHTML = skeletonHtml;
+
+    // Card skeleton
+    this.showCardSkeletonLoading();
   }
 
   // 当前排序状态
@@ -1151,6 +1199,223 @@ setupEventListeners() {
     tbody.querySelectorAll('.btn-copy-url').forEach(btn => {
       btn.addEventListener('click', (e) => this.copyProxyUrlFromRemote(e.currentTarget.dataset.remote));
     });
+  }
+
+  // ===== Card View Rendering =====
+  renderPatternCards(patterns) {
+    const container = document.getElementById('pattern-card-view');
+    container.innerHTML = '';
+
+    // Empty state
+    if (!patterns || patterns.length === 0) {
+      const isFiltered = document.getElementById('search-input').value || 
+                         document.getElementById('filter-status').value !== 'all';
+      
+      container.innerHTML = `
+        <div class="pattern-card-empty">
+          <div class="empty-state-icon">
+            <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
+          </div>
+          <div class="empty-state-title">
+            ${isFiltered ? '没有找到匹配的 Pattern' : '还没有 Pattern'}
+          </div>
+          <div class="empty-state-description">
+            ${isFiltered 
+              ? '尝试调整搜索条件或筛选器' 
+              : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
+          </div>
+          ${!isFiltered ? `
+            <button class="btn btn-primary" onclick="app.showPatternEdit()">
+              <i class="bi bi-plus-lg"></i> 新建 Pattern
+            </button>
+          ` : ''}
+        </div>
+      `;
+      return;
+    }
+
+    patterns.forEach(pattern => {
+      const card = this.createPatternCard(pattern);
+      container.appendChild(card);
+    });
+  }
+
+  createPatternCard(pattern) {
+    // Find the series to get tmdbId and stats
+    const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
+    const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
+    
+    // Determine status
+    let statusClass = '';
+    let statusText = '';
+    if (!series) {
+      statusClass = 'status-error';
+      statusText = '未找到';
+    } else if (series.title !== pattern.series) {
+      statusClass = 'status-warning';
+      statusText = '名称不一致';
+    }
+
+    // Calculate episode stats
+    let downloadedEpisodes = 0;
+    let totalEpisodes = 0;
+    let missingEpisodes = 0;
+    let progressPercent = 0;
+
+    if (series?.statistics) {
+      totalEpisodes = series.statistics.episodeCount || 0;
+      downloadedEpisodes = series.statistics.episodeFileCount || 0;
+      missingEpisodes = totalEpisodes - downloadedEpisodes;
+      progressPercent = totalEpisodes > 0 ? Math.round((downloadedEpisodes / totalEpisodes) * 100) : 0;
+    }
+
+    // Get poster URL
+    let posterUrl = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="280" height="180" viewBox="0 0 280 180"%3E%3Crect fill="%23f5f0e6" width="280" height="180"/%3E%3Ctext fill="%239e9085" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
+    
+    if (series?.tmdbId) {
+      // Will be lazy loaded
+      posterUrl = `https://image.tmdb.org/t/p/w500/placeholder.jpg`;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'pattern-card';
+    card.dataset.patternId = pattern.id;
+    card.dataset.tmdbId = series?.tmdbId || '';
+
+    card.innerHTML = `
+      <div class="pattern-card-poster">
+        <img src="${posterUrl}" alt="${this.escapeHtml(pattern.series)}" loading="lazy">
+        <div class="pattern-card-poster-overlay"></div>
+        <span class="pattern-card-season-badge">S${pattern.season}</span>
+        ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
+      </div>
+      <div class="pattern-card-body">
+        <div class="pattern-card-title">${this.escapeHtml(pattern.series)}</div>
+        ${zhName ? `<div class="pattern-card-title-zh">${this.escapeHtml(zhName)}</div>` : ''}
+        <div class="pattern-card-meta">
+          <span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span>
+          <span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span>
+          ${pattern.releasegroup ? `<span class="badge bg-secondary">${this.escapeHtml(pattern.releasegroup)}</span>` : ''}
+        </div>
+        ${series ? `
+          <div class="pattern-card-progress">
+            <div class="pattern-card-progress-header">
+              <div class="pattern-card-progress-stats">
+                <span class="pattern-card-progress-stat downloaded" title="已下载">
+                  <i class="bi bi-check-circle-fill"></i> ${downloadedEpisodes}
+                </span>
+                <span class="pattern-card-progress-stat missing" title="缺失">
+                  <i class="bi bi-exclamation-circle"></i> ${Math.max(0, missingEpisodes)}
+                </span>
+              </div>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">${progressPercent}%</span>
+            </div>
+            <div class="pattern-card-progress-bar">
+              <div class="pattern-card-progress-bar-fill" style="width: ${progressPercent}%"></div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+      <div class="pattern-card-footer">
+        <div class="pattern-card-checkbox">
+          <input type="checkbox" class="form-check-input card-checkbox" data-id="${pattern.id}">
+        </div>
+        <div class="pattern-card-actions">
+          ${series?.titleSlug && this.sonarrHost ? `
+            <a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+              <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          ` : ''}
+          <button class="btn btn-sm btn-outline-primary btn-card-edit" data-id="${pattern.id}" title="编辑">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger btn-card-delete" data-id="${pattern.id}" title="删除">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Add event listeners
+    card.querySelector('.btn-card-edit')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.editPattern(parseInt(e.currentTarget.dataset.id));
+    });
+
+    card.querySelector('.btn-card-delete')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.deletePattern(parseInt(e.currentTarget.dataset.id));
+    });
+
+    card.querySelector('.card-checkbox')?.addEventListener('change', () => {
+      this.updateBatchUI();
+    });
+
+    // Lazy load poster image
+    if (series?.tmdbId) {
+      this.loadCardPoster(card, series);
+    }
+
+    return card;
+  }
+
+  async loadCardPoster(card, series) {
+    const img = card.querySelector('.pattern-card-poster img');
+    if (!img) return;
+
+    try {
+      // Try TMDB first
+      if (series.tmdbId) {
+        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
+        if (response.ok) {
+          const tmdbData = await response.json();
+          if (tmdbData.backdrop_path) {
+            img.src = `https://image.tmdb.org/t/p/w780${tmdbData.backdrop_path}`;
+            return;
+          } else if (tmdbData.poster_path) {
+            img.src = `https://image.tmdb.org/t/p/w500${tmdbData.poster_path}`;
+            return;
+          }
+        }
+      }
+
+      // Fallback to Sonarr fanart/poster
+      const fanart = series.images?.find(i => i.coverType === 'fanart');
+      const poster = series.images?.find(i => i.coverType === 'poster');
+      const imageUrl = fanart?.remoteUrl || fanart?.url || poster?.remoteUrl || poster?.url;
+      
+      if (imageUrl) {
+        let finalUrl = imageUrl;
+        if (finalUrl.startsWith('/')) {
+          finalUrl = `${this.sonarrHost}${finalUrl}`;
+        }
+        img.src = finalUrl;
+      }
+    } catch (e) {
+      console.warn('[loadCardPoster] Failed:', e);
+    }
+  }
+
+  showCardSkeletonLoading() {
+    const container = document.getElementById('pattern-card-view');
+    let skeletonHtml = '';
+    for (let i = 0; i < 6; i++) {
+      skeletonHtml += `
+        <div class="pattern-card-skeleton">
+          <div class="skeleton skeleton-poster"></div>
+          <div class="skeleton-body">
+            <div class="skeleton skeleton-title"></div>
+            <div class="skeleton skeleton-subtitle"></div>
+            <div class="skeleton-badges">
+              <div class="skeleton skeleton-badge"></div>
+              <div class="skeleton skeleton-badge"></div>
+            </div>
+            <div class="skeleton skeleton-progress"></div>
+          </div>
+        </div>
+      `;
+    }
+    container.innerHTML = skeletonHtml;
   }
 
   async copyProxyUrlFromRemote(remoteUrl) {
@@ -2048,7 +2313,9 @@ setupEventListeners() {
       return true;
     });
 
+    // Render both views (only visible one matters for perf, but keep both in sync)
     this.renderPatterns(filtered);
+    this.renderPatternCards(filtered);
     this.updateBatchUI(); // 更新批量操作UI状态
   }
 

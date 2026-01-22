@@ -830,3 +830,300 @@ select:focus {
   margin-top: 0.5rem;
 }
 
+/* ===== Pattern Card Grid View ===== */
+.pattern-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+}
+
+.pattern-card {
+  background: var(--bg-card);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 4px 20px -5px var(--shadow-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.pattern-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px -10px var(--shadow-color);
+}
+
+.pattern-card-poster {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg-table-header) 100%);
+}
+
+.pattern-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.pattern-card:hover .pattern-card-poster img {
+  transform: scale(1.1);
+}
+
+.pattern-card-poster-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  padding: 2rem 1rem 1rem;
+}
+
+.pattern-card-season-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(10px);
+  padding: 0.35rem 0.75rem;
+  border-radius: 2rem;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.pattern-card-status-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pattern-card-status-badge.status-ok {
+  background: rgba(114, 140, 105, 0.9);
+  color: #fff;
+}
+
+.pattern-card-status-badge.status-warning {
+  background: rgba(220, 179, 107, 0.9);
+  color: #333;
+}
+
+.pattern-card-status-badge.status-error {
+  background: rgba(185, 92, 80, 0.9);
+  color: #fff;
+}
+
+.pattern-card-body {
+  padding: 1rem 1.25rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pattern-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pattern-card-title-zh {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.pattern-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.pattern-card-meta .badge {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.5rem;
+}
+
+/* Sonarr Progress Integration */
+.pattern-card-progress {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.pattern-card-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.pattern-card-progress-stats {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.pattern-card-progress-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pattern-card-progress-stat.downloaded {
+  color: #728c69;
+}
+
+.pattern-card-progress-stat.missing {
+  color: #b95c50;
+}
+
+.pattern-card-progress-bar {
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.pattern-card-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #728c69 0%, #8fa382 100%);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.pattern-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-hover);
+  border-top: 1px solid var(--border-color);
+}
+
+.pattern-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pattern-card-actions .btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.85rem;
+}
+
+.pattern-card-checkbox {
+  display: flex;
+  align-items: center;
+}
+
+/* Card Skeleton Loading */
+.pattern-card-skeleton {
+  background: var(--bg-card);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 4px 20px -5px var(--shadow-color);
+}
+
+.pattern-card-skeleton .skeleton-poster {
+  width: 100%;
+  height: 180px;
+}
+
+.pattern-card-skeleton .skeleton-body {
+  padding: 1rem 1.25rem;
+}
+
+.pattern-card-skeleton .skeleton-title {
+  height: 1.25rem;
+  margin-bottom: 0.5rem;
+  width: 80%;
+}
+
+.pattern-card-skeleton .skeleton-subtitle {
+  height: 1rem;
+  margin-bottom: 0.75rem;
+  width: 60%;
+}
+
+.pattern-card-skeleton .skeleton-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.pattern-card-skeleton .skeleton-badge {
+  height: 1.5rem;
+  width: 60px;
+  border-radius: 0.25rem;
+}
+
+.pattern-card-skeleton .skeleton-progress {
+  height: 6px;
+  width: 100%;
+  border-radius: 3px;
+}
+
+/* Empty State for Cards */
+.pattern-card-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--bg-card);
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px -5px var(--shadow-color);
+}
+
+/* View Toggle Button Active State */
+.btn-group .btn.active {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+/* Responsive adjustments for cards */
+@media (max-width: 576px) {
+  .pattern-card-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .pattern-card-poster {
+    height: 150px;
+  }
+}
+
+@media (min-width: 992px) {
+  .pattern-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+}
+
+/* Sonarr Link in Card */
+.pattern-card-sonarr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--accent-color);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.pattern-card-sonarr-link:hover {
+  color: #8a5a44;
+  text-decoration: underline;
+}
+
