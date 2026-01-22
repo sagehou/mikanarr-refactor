@@ -15,6 +15,12 @@ stages:
     BUILDAH_FORMAT: docker
     BUILDAH_ISOLATION: chroot
   before_script:
+    - mkdir -p .config/containers
+    - echo '[storage]' > .config/containers/storage.conf
+    - echo 'driver = "vfs"' >> .config/containers/storage.conf
+    - echo 'runroot = "/tmp/run"' >> .config/containers/storage.conf
+    - echo 'graphroot = "/tmp/graph"' >> .config/containers/storage.conf
+    - export CONTAINERS_STORAGE_CONF=$PWD/.config/containers/storage.conf
     - buildah login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
   script:
   - |
