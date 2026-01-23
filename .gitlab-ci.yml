@@ -3,6 +3,21 @@ variables:
   CONTAINER_TEST_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
   CONTAINER_RELEASE_IMAGE: "$CI_REGISTRY_IMAGE:latest"
   DOCKER_TLS_CERTDIR: ''
+
+workflow:
+  rules:
+    # Skip CI for non-business code changes
+    - changes:
+        - .github/**/*
+        - "*.md"
+        - LICENSE
+        - .gitignore
+        - .editorconfig
+        - docs/**/*
+      when: never
+    # Run CI for all other changes
+    - when: always
+
 stages:
 - publish
 - deploy

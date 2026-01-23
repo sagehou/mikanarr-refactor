@@ -37,7 +37,7 @@ version: '3.8'
 services:
   mikanarr:
     container_name: mikanarr
-    image: registry.tyo-arm.755022.xyz/sage/mikanarr-refactor:arm64-latest
+    image: ghcr.io/sagehou/mikanarr-refactor:latest  # 多平台镜像，自动适配 amd64/arm64
     volumes:
       - ./data:/app/data
     env_file: .env
