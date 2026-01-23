@@ -7,10 +7,24 @@ on:
       - main
     tags:
       - 'v*'
+    paths-ignore:
+      - '.github/**'
+      - '*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+      - 'docs/**'
   pull_request:
     branches:
       - master
       - main
+    paths-ignore:
+      - '.github/**'
+      - '*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+      - 'docs/**'
   workflow_dispatch:
 
 env:
