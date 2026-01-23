@@ -2637,6 +2637,6 @@ setupEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('[App] Mikanarr v2.1.0 - Build: 2025-01-14');
+  console.log('[App] Mikanarr v2.1.0 - Build: 2026-01-23');
   new MikanarrApp();
 });
