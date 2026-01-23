@@ -22,7 +22,7 @@ function transformTitle(title, pattern) {
   }
 }
 
-router.get('/*', async (req, res) => {
+router.use(async (req, res) => {
   try {
     console.log(`[RSS] Request: ${req.path} with query:`, req.query);
     console.log(`[RSS] Original URL: ${req.originalUrl}`);

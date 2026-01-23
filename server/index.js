@@ -48,7 +48,7 @@ app.use('/RSS', rssRoutes);
 app.use('/tmdb', tmdbRoutes);
 
 // 5. Catch-all (SPA 支持)
-app.get('*', (req, res, next) => {
+app.use((req, res, next) => {
   // 不拦截 API 请求，如果上面的路由没匹配到，交给 Error Handler 或默认 404
   if (req.path.startsWith('/api') || req.path.startsWith('/sonarr') ||
       req.path.startsWith('/proxy') || req.path.startsWith('/RSS') ||
