@@ -22,8 +22,8 @@ self.addEventListener('fetch', (e) => {
     fetch(e.request)
       .then((response) => {
         return caches.open(CACHE_NAME).then((cache) => {
-          // Only cache same-origin requests to avoid issues
-          if (e.request.url.startsWith(self.location.origin)) {
+          // Only cache same-origin GET requests
+          if (e.request.method === 'GET' && e.request.url.startsWith(self.location.origin)) {
             cache.put(e.request, response.clone());
           }
           return response;
