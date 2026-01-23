@@ -2,6 +2,9 @@
 
 Mikanarr - Mikan Anime to Sonarr Bridge (重构版)
 
+![List View](docs/screenshots/list_view.png)
+![Edit View](docs/screenshots/edit_view.png)
+
 ## 功能特性
 
 - ✅ **RSS 转换**：将 Mikan RSS 转换为 Sonarr 可识别的标准格式，支持自定义正则表达式匹配剧集
