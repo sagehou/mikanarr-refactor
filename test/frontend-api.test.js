@@ -17,11 +17,14 @@ test('uses Cookie credentials and throws parsed non-2xx errors', async () => {
   });
 
   await assert.rejects(
-    () => client.request('/api/patterns', { method: 'POST' }),
+    () => client.request('/api/patterns', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer stale-browser-token' }
+    }),
     error => error.message === 'bad input' && error.status === 400 && error.code === 'INVALID_PATTERN'
   );
   assert.equal(calls[0].options.credentials, 'same-origin');
-  assert.equal('Authorization' in calls[0].options.headers, false);
+  assert.equal(calls[0].options.headers.has('authorization'), false);
 });
 
 test('session, login, and logout use the Cookie auth endpoints', async () => {

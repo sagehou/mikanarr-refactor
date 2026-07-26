@@ -4,6 +4,7 @@ const { JSDOM } = require('jsdom');
 const { createAppFixture } = require('./helpers/fixtures');
 
 const { MikanarrApp } = require('../public/js/app');
+const { createClient } = require('../public/js/api');
 
 const payload = '<img src=x onerror="globalThis.pwned=1">';
 
@@ -16,6 +17,7 @@ function installDom(body) {
   global.navigator = dom.window.navigator;
   global.DOMParser = dom.window.DOMParser;
   global.Event = dom.window.Event;
+  global.localStorage = dom.window.localStorage;
   return dom;
 }
 
@@ -26,6 +28,7 @@ function cleanupDom(dom) {
   delete global.navigator;
   delete global.DOMParser;
   delete global.Event;
+  delete global.localStorage;
 }
 
 function makeApp() {
@@ -150,6 +153,70 @@ test('Sonarr results and options render caller-controlled fields as literal text
   cleanupDom(dom);
 });
 
+test('Add Series reuses one registered Bootstrap modal through submit and dismiss', async () => {
+  const dom = installDom(`
+    <div id="add-series-modal"><button type="button" data-bs-dismiss="modal"></button></div>
+    <input id="sonarr-search-input">
+    <div id="sonarr-search-results"></div>
+    <div id="add-series-step-1"></div>
+    <div id="add-series-step-2" class="d-none"></div>
+    <button id="add-series-submit-btn"></button>
+    <button id="add-series-back-btn"></button>
+    <select id="sonarr-root-folder"><option value="/series" selected>/series</option></select>
+    <select id="sonarr-quality-profile"><option value="1" selected>HD</option></select>
+    <select id="sonarr-series-type"><option value="anime" selected>Anime</option></select>
+    <select id="sonarr-monitor"><option value="all" selected>All</option></select>
+    <input id="sonarr-season-folder" type="checkbox" checked>
+    <select id="series"></select>
+  `);
+  const registry = new WeakMap();
+  let constructions = 0;
+  let listenerAdds = 0;
+  class FakeModal {
+    constructor(element) {
+      this.element = element;
+      this.showCalls = 0;
+      this.hideCalls = 0;
+      this.disposeCalls = 0;
+      constructions += 1;
+      listenerAdds += 1;
+      element.addEventListener('hidden.bs.modal', () => {});
+      if (!registry.has(element)) registry.set(element, this);
+    }
+
+    show() { this.showCalls += 1; }
+    hide() { this.hideCalls += 1; }
+    dispose() { this.disposeCalls += 1; registry.delete(this.element); }
+    static getInstance(element) { return registry.get(element) || null; }
+    static getOrCreateInstance(element) { return this.getInstance(element) || new this(element); }
+  }
+  window.bootstrap = { Modal: FakeModal };
+  const modalElement = document.getElementById('add-series-modal');
+  modalElement.querySelector('[data-bs-dismiss="modal"]').addEventListener('click', () => {
+    FakeModal.getOrCreateInstance(modalElement).hide();
+  });
+  const app = new MikanarrApp({ client: {}, autoInit: false });
+  app.loadSonarrOptions = async () => {};
+  app.getOrCreateMikanarrTag = async () => null;
+  app.apiRequest = async () => ({ ok: true });
+  app.loadSeries = async () => {};
+  app.selectedSeries = { title: 'Series', tvdbId: 42, images: [] };
+
+  app.showAddSeriesModal();
+  const instance = FakeModal.getInstance(modalElement);
+  await app.submitAddSeries();
+  app.showAddSeriesModal();
+  modalElement.querySelector('[data-bs-dismiss="modal"]').click();
+
+  assert.equal(FakeModal.getInstance(modalElement), instance);
+  assert.equal(constructions, 1);
+  assert.equal(listenerAdds, 1);
+  assert.equal(instance.showCalls, 2);
+  assert.equal(instance.hideCalls, 2);
+  assert.equal(instance.disposeCalls, 0);
+  cleanupDom(dom);
+});
+
 test('RSS request errors are rendered as literal text', async () => {
   const dom = installDom(`
     <input id="remote" value="https://mikanani.me/RSS/test">
@@ -254,6 +321,66 @@ test('startup authenticates with the Cookie session endpoint before loading data
   cleanupDom(dom);
 });
 
+test('config 401 aborts startup data loads and performs one expiry transition', async () => {
+  const dom = installDom(`
+    <div id="login-container"></div>
+    <div id="main-container" class="d-none"></div>
+    <div id="oidc-login-container" class="d-none"></div>
+  `);
+  let app;
+  let expiryCalls = 0;
+  let resets = 0;
+  let patternCalls = 0;
+  let seriesCalls = 0;
+  const client = createClient({
+    fetchImpl: async url => {
+      if (url === '/auth/session') {
+        return new Response(JSON.stringify({ user: { username: 'user' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+      if (url === '/auth/config') {
+        return new Response(JSON.stringify({ oidcEnabled: false, oidcAutoLogin: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify({ error: 'Unauthorized', code: 'UNAUTHORIZED' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' }
+      });
+    },
+    onUnauthorized: async () => {
+      expiryCalls += 1;
+      await app.handleAuthExpired();
+    }
+  });
+  app = new MikanarrApp({ client, autoInit: false });
+  app.initView = () => {};
+  const showLoggedOut = app.showLoggedOut.bind(app);
+  app.showLoggedOut = () => {
+    resets += 1;
+    showLoggedOut();
+  };
+  app.loadPatterns = async () => {
+    patternCalls += 1;
+    await app.apiRequest('/api/patterns');
+  };
+  app.loadSeries = async () => {
+    seriesCalls += 1;
+    await app.apiRequest('/sonarr/api/v3/series');
+  };
+
+  await app.start();
+
+  assert.equal(expiryCalls, 1);
+  assert.equal(resets, 1);
+  assert.equal(patternCalls, 0);
+  assert.equal(seriesCalls, 0);
+  cleanupDom(dom);
+});
+
 test('unauthenticated startup resets once and checks OIDC config once', async () => {
   const dom = installDom('');
   const app = makeApp();
@@ -288,6 +415,36 @@ test('later session expiry restores the OIDC login path', async () => {
 
   assert.equal(resets, 1);
   assert.equal(configChecks, 1);
+  cleanupDom(dom);
+});
+
+test('successful session and login each rearm one expiry transition', async () => {
+  const dom = installDom(`
+    <input id="username" value="user">
+    <input id="password" value="password">
+    <div id="login-error" class="d-none"></div>
+  `);
+  let resets = 0;
+  const client = {
+    session: async () => ({ user: { username: 'user' } }),
+    login: async () => ({ user: { username: 'user' } })
+  };
+  const app = new MikanarrApp({ client, autoInit: false });
+  app.showLoggedOut = () => { resets += 1; };
+  app.showAuthenticated = () => {};
+  app.checkOidcConfig = async () => {};
+  app.loadAuthenticatedData = async () => {};
+
+  await Promise.all([app.handleAuthExpired(), app.handleAuthExpired()]);
+  assert.equal(resets, 1);
+
+  await app.checkAuth();
+  await Promise.all([app.handleAuthExpired(), app.handleAuthExpired()]);
+  assert.equal(resets, 2);
+
+  await app.handleLogin({ preventDefault() {} });
+  await Promise.all([app.handleAuthExpired(), app.handleAuthExpired()]);
+  assert.equal(resets, 3);
   cleanupDom(dom);
 });
 
@@ -353,20 +510,32 @@ test('logout-mode OIDC config reveals SSO without forcing auto-login', async () 
   cleanupDom(dom);
 });
 
-test('apiRequest delegates to the Cookie client without owning a JWT', async () => {
-  const app = makeApp();
+test('real constructor can suppress initialization and never owns a stale JWT', async () => {
+  const dom = installDom('');
+  localStorage.setItem('token', 'stale-browser-bearer');
   const calls = [];
   const expected = { ok: true };
-  app.client = {
+  const client = {
     request: async (url, options) => {
       calls.push({ url, options });
       return expected;
     }
   };
+  const originalInit = MikanarrApp.prototype.init;
+  let initCalls = 0;
+  MikanarrApp.prototype.init = () => { initCalls += 1; };
+  let app;
+  try {
+    app = new MikanarrApp({ client, autoInit: false });
+  } finally {
+    MikanarrApp.prototype.init = originalInit;
+  }
 
   assert.equal(await app.apiRequest('/api/patterns', { method: 'POST' }), expected);
   assert.deepEqual(calls, [{ url: '/api/patterns', options: { method: 'POST' } }]);
+  assert.equal(initCalls, 0);
   assert.equal(Object.hasOwn(app, 'token'), false);
+  cleanupDom(dom);
 });
 
 test('card checkboxes drive batch selection in card view', () => {

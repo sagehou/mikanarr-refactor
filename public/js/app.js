@@ -6,7 +6,7 @@ const MikanarrApi = typeof module === 'object' && module.exports
   : window.MikanarrApi;
 
 class MikanarrApp {
-  constructor({ client } = {}) {
+  constructor({ client, autoInit = true } = {}) {
     this.client = client || MikanarrApi.createClient({
       onUnauthorized: () => this.handleAuthExpired()
     });
@@ -14,9 +14,10 @@ class MikanarrApp {
     this.seriesList = [];
     this.rssItems = [];
     this.tmdbDetails = new Map();
+    this.authExpired = false;
     this.debounceTimer = null;
     
-    this.init();
+    if (autoInit) this.init();
   }
 
   init() {
@@ -28,7 +29,7 @@ class MikanarrApp {
 
   async start() {
     const authenticated = await this.checkAuth();
-    if (!authenticated) await this.checkOidcConfig();
+    if (!authenticated && !this.authExpired) await this.checkOidcConfig();
   }
 
   async checkOidcConfig({ allowAutoLogin = true } = {}) {
@@ -84,11 +85,12 @@ class MikanarrApp {
   async checkAuth() {
     try {
       await this.client.session();
+      this.authExpired = false;
       this.showAuthenticated();
       await this.loadAuthenticatedData();
       return true;
     } catch (_) {
-      this.showLoggedOut();
+      if (!this.authExpired) this.showLoggedOut();
       return false;
     }
   }
@@ -117,6 +119,7 @@ class MikanarrApp {
         this.sonarrHost = config.sonarrHost || '';
       }
     } catch (error) {
+      if (error.status === 401) throw error;
       console.warn('[loadConfig] Failed to load config:', error.message);
     }
   }
@@ -305,7 +308,7 @@ setupEventListeners() {
 
   // Add Series Logic
   showAddSeriesModal(initialQuery = '') {
-    const modal = new window.bootstrap.Modal(document.getElementById('add-series-modal'));
+    const modal = window.bootstrap.Modal.getOrCreateInstance(document.getElementById('add-series-modal'));
     document.getElementById('sonarr-search-input').value = initialQuery;
     document.getElementById('sonarr-search-results').innerHTML = '';
     document.getElementById('add-series-step-1').classList.remove('d-none');
@@ -497,6 +500,7 @@ setupEventListeners() {
 
     try {
       await this.client.login({ username, password });
+      this.authExpired = false;
       errorDiv.classList.add('d-none');
       this.showAuthenticated();
       await this.loadAuthenticatedData();
@@ -670,7 +674,7 @@ setupEventListeners() {
       }
 
       // Success
-      const modal = window.bootstrap.Modal.getInstance(document.getElementById('add-series-modal'));
+      const modal = window.bootstrap.Modal.getOrCreateInstance(document.getElementById('add-series-modal'));
       modal.hide();
       
       // Reload series list
@@ -2492,6 +2496,8 @@ setupEventListeners() {
   }
 
   async handleAuthExpired() {
+    if (this.authExpired) return;
+    this.authExpired = true;
     this.showLoggedOut();
     Toast.warning('Session expired, please login again');
     await this.checkOidcConfig();
