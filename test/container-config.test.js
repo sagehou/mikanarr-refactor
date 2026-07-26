@@ -40,7 +40,7 @@ test('Dockerfile defines a pinned production-only non-root healthy runtime', () 
   assert.match(dockerfile, /(?:mkdir|install).*\/app\/data/);
   assert.match(dockerfile, /chown[^\n]*node:node[^\n]*\/app\/data/);
   assert.match(dockerfile, /^USER node$/m);
-  assert.match(dockerfile, /^HEALTHCHECK .*wget .*http:\/\/127\.0\.0\.1:12306\/api\/health/m);
+  assert.match(dockerfile, /^HEALTHCHECK --interval=5s .*wget .*http:\/\/127\.0\.0\.1:12306\/api\/health/m);
   assert.match(dockerfile, /^CMD \["node", "server\/index\.js"\]$/m);
 });
 
@@ -57,8 +57,11 @@ test('Compose defaults to GHCR, loopback binding, root env, persistent data, and
   assert.equal(service.image, '${IMAGE_NAME:-ghcr.io/sagehou/mikanarr-refactor:latest}');
   assert.ok([service.env_file].flat().includes('.env'));
   assert.ok(service.ports.includes('${BIND_ADDRESS:-127.0.0.1}:12306:12306'));
-  assert.ok(service.volumes.includes('./data:/app/data'));
+  assert.ok(compose.volumes && Object.hasOwn(compose.volumes, 'mikanarr-data'));
+  assert.ok(service.volumes.includes('mikanarr-data:/app/data'));
+  assert.ok(!service.volumes.includes('./data:/app/data'));
   assert.match([service.healthcheck.test].flat().join(' '), /wget .*\/api\/health/);
+  assert.equal(service.healthcheck.interval, '5s');
 });
 
 test('GitHub checks gate image publishing and workflow edits trigger releases', () => {
@@ -112,22 +115,33 @@ const dockerSkip = dockerInfo.status === 0
 
 test('built image runs as node and reaches healthy status', { skip: dockerSkip, timeout: 180_000 }, async t => {
   const tag = `mikanarr-config-test:${process.pid}`;
+  const volume = `mikanarr-config-test-${process.pid}`;
+  let id;
+  t.after(() => {
+    if (id) spawnSync('docker', ['rm', '--force', id], { stdio: 'ignore' });
+    spawnSync('docker', ['volume', 'rm', '--force', volume], { stdio: 'ignore' });
+    spawnSync('docker', ['image', 'rm', '--force', tag], { cwd: root, stdio: 'ignore' });
+  });
+
   execFileSync('docker', ['build', '--tag', tag, '.'], { cwd: root, stdio: 'inherit' });
-  t.after(() => spawnSync('docker', ['image', 'rm', '--force', tag], { cwd: root, stdio: 'ignore' }));
+  execFileSync('docker', ['volume', 'create', volume], { stdio: 'ignore' });
 
   const user = execFileSync('docker', ['image', 'inspect', '--format={{.Config.User}}', tag], { encoding: 'utf8' }).trim();
   assert.equal(user, 'node');
 
-  const id = execFileSync('docker', [
-    'run', '--detach', '--env', 'ADMIN_USERNAME=admin', '--env', 'ADMIN_PASSWORD=container-test-secret', tag
+  id = execFileSync('docker', [
+    'run', '--detach', '--mount', `type=volume,source=${volume},target=/app/data`,
+    '--env', 'ADMIN_USERNAME=admin', '--env', 'ADMIN_PASSWORD=container-test-secret', tag
   ], { encoding: 'utf8' }).trim();
-  t.after(() => spawnSync('docker', ['rm', '--force', id], { stdio: 'ignore' }));
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const state = execFileSync('docker', ['inspect', '--format={{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}', id], { encoding: 'utf8' }).trim();
-    if (state === 'healthy') return;
+    if (state === 'healthy') {
+      execFileSync('docker', ['exec', id, 'sh', '-c', 'test "$(id -un)" = node && touch /app/data/.container-write-test']);
+      return;
+    }
     if (state === 'unhealthy' || state === 'missing') assert.fail(`container health status: ${state}`);
     await new Promise(resolvePromise => setTimeout(resolvePromise, 1_000));
   }
-  assert.fail('container did not become healthy within 30 seconds');
+  assert.fail('container did not become healthy within 60 seconds');
 });

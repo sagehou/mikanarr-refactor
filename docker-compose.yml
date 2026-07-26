@@ -11,10 +11,13 @@ services:
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:12306:12306
     volumes:
-      - ./data:/app/data
+      - mikanarr-data:/app/data
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:12306/api/health"]
-      interval: 30s
+      interval: 5s
       timeout: 5s
       start_period: 10s
       retries: 3
+
+volumes:
+  mikanarr-data:
