@@ -33,7 +33,7 @@ function pattern(overrides = {}) {
   };
 }
 
-async function createRssFixture(t, { xml = RSS_XML, env = {}, logger, failIncrement = false } = {}) {
+async function createRssFixture(t, { xml = RSS_XML, env = {}, logger, failIncrement = false, onGet } = {}) {
   const fixture = createTestDatabase();
   const config = loadConfig({
     NODE_ENV: 'test', DATA_DIR: fixture.dataDir,
@@ -51,7 +51,7 @@ async function createRssFixture(t, { xml = RSS_XML, env = {}, logger, failIncrem
       fixture.database.incrementMatchCounts(counts);
     }
   };
-  const httpClient = { async get() { return { status: 200, data: xml, headers: {} }; } };
+  const httpClient = { async get(url, options) { onGet?.(url, options); return { status: 200, data: xml, headers: {} }; } };
   const app = createApp({
     config, database, httpClient,
     logger: logger || { log() {}, warn() {}, error() {} }
@@ -61,8 +61,26 @@ async function createRssFixture(t, { xml = RSS_XML, env = {}, logger, failIncrem
     await new Promise(resolve => http.server.close(resolve));
     fixture.close();
   });
-  return { ...fixture, ...http, database, calls };
+  return { ...fixture, ...http, config, database, calls };
 }
+
+test('RSS applies the shared Mikan policy to redirects and response bounds', async t => {
+  let request;
+  const fixture = await createRssFixture(t, {
+    onGet(url, options) { request = { url, options }; }
+  });
+
+  const response = await fetch(`${fixture.baseUrl}/RSS/Bangumi?id=1`);
+
+  assert.equal(response.status, 200);
+  assert.equal(request.url, 'https://mikanani.me/RSS/Bangumi?id=1');
+  assert.equal(request.options.maxRedirects, 3);
+  assert.equal(request.options.maxContentLength, fixture.config.http.maxXmlBytes);
+  assert.throws(
+    () => request.options.beforeRedirect({ protocol: 'http:', hostname: '127.0.0.1', path: '/' }),
+    error => error.code === 'URL_NOT_ALLOWED'
+  );
+});
 
 test('compiles valid stored regexes once and skips invalid stored entries', () => {
   const compiled = compilePatterns([

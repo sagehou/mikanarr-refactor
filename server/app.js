@@ -43,13 +43,19 @@ function createApp({ config, database, oidcProvider, httpClient = axios, logger 
     if (['/api', '/sonarr', '/proxy', '/RSS', '/tmdb', '/auth'].some(prefix => req.path.startsWith(prefix))) return next();
     res.sendFile(path.join(__dirname, '../public/index.html'));
   });
+  app.use((req, res) => res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' }));
   app.use((error, req, res, next) => {
-    logger.error('[Server Error]', error);
-    if (res.headersSent) return;
+    if (res.headersSent) return next(error);
     if (error.type === 'entity.parse.failed') {
+      logger.error(`[Server Error] route=${req.path} status=400`);
       return res.status(400).json({ error: 'Invalid JSON', code: 'INVALID_JSON' });
     }
-    res.status(error.status || 500).json({ error: error.message || 'Internal server error', code: error.code || 'REQUEST_FAILED' });
+    if (error.type === 'entity.too.large') {
+      logger.error(`[Server Error] route=${req.path} status=413`);
+      return res.status(413).json({ error: 'Request body too large', code: 'PAYLOAD_TOO_LARGE' });
+    }
+    logger.error(`[Server Error] route=${req.path} status=500`);
+    res.status(500).json({ error: 'Internal server error', code: 'REQUEST_FAILED' });
   });
   return app;
 }

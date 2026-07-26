@@ -3,6 +3,7 @@ const axios = require('axios');
 const xml2js = require('xml2js');
 const safeRegex = require('safe-regex2');
 const { hasNamedEpisodeGroup } = require('../patternValidation');
+const { MIKAN_POLICY, parseAllowedUrl, boundedAxiosOptions } = require('../urlPolicy');
 
 function hasValidOffset(pattern) {
   return Number.isSafeInteger(pattern.offset) && pattern.offset >= -100000 && pattern.offset <= 100000;
@@ -46,11 +47,14 @@ function createRssRouter({ database, config, httpClient = axios, logger = consol
       try {
         const originalPath = req.originalUrl.split('?')[0];
         const queryString = new URLSearchParams(req.query).toString();
-        const response = await httpClient.get(
+        const upstreamUrl = parseAllowedUrl(
           `https://mikanani.me${originalPath}${queryString ? `?${queryString}` : ''}`,
+          MIKAN_POLICY
+        );
+        const response = await httpClient.get(
+          upstreamUrl.href,
           {
-            timeout: config.http.timeoutMs,
-            maxContentLength: config.http.maxXmlBytes,
+            ...boundedAxiosOptions(MIKAN_POLICY, config),
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
           }
         );
