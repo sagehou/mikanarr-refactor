@@ -4,6 +4,8 @@ const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 const test = require('node:test');
 const yaml = require('yaml');
+const dotenv = require('dotenv');
+const { loadConfig, ConfigError } = require('../server/config');
 
 const root = resolve(__dirname, '..');
 const read = file => readFileSync(resolve(root, file), 'utf8');
@@ -31,6 +33,7 @@ test('production dependency floors and exact test dependencies stay patched', ()
   assert.equal(manifest.devDependencies.jsdom, '29.1.1');
   assert.equal(manifest.devDependencies.yaml, '2.9.0');
   assert.equal(manifest.dependencies.cors, undefined);
+  assert.deepEqual(manifest.allowScripts, { 'better-sqlite3@12.11.1': true });
 });
 
 test('Dockerfile defines a pinned production-only non-root healthy runtime', () => {
@@ -62,6 +65,27 @@ test('Compose defaults to GHCR, loopback binding, root env, persistent data, and
   assert.ok(!service.volumes.includes('./data:/app/data'));
   assert.match([service.healthcheck.test].flat().join(' '), /wget .*\/api\/health/);
   assert.equal(service.healthcheck.interval, '5s');
+});
+
+test('the copied environment example fails closed until authentication is configured', () => {
+  const env = dotenv.parse(read('.env.example'));
+  assert.equal(env.ADMIN_USERNAME, '');
+  assert.equal(env.ADMIN_PASSWORD, '');
+  assert.throws(
+    () => loadConfig({ ...env, NODE_ENV: 'production' }),
+    error => error instanceof ConfigError && error.code === 'AUTH_NOT_CONFIGURED'
+  );
+});
+
+test('the destructive restore recipe makes a fresh no-clobber backup first and is valid shell', () => {
+  const blocks = [...read('README.md').matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]);
+  const restore = blocks.find(block => block.includes('find /app/data -mindepth 1'));
+  assert.ok(restore, 'restore command block');
+  assert.match(restore, /backup="backups\/mikanarr-data-before-restore-\$\(date \+%Y%m%d-%H%M%S\)\.tar\.gz"/);
+  assert.match(restore, /\( set -C; docker compose run[^\n]+> "\$backup" \)/);
+  assert.ok(restore.indexOf('> "$backup"') < restore.indexOf('find /app/data -mindepth 1'));
+  const syntax = spawnSync('bash', ['-n'], { input: restore, encoding: 'utf8' });
+  assert.equal(syntax.status, 0, syntax.stderr);
 });
 
 test('GitHub checks gate image publishing and workflow edits trigger releases', () => {

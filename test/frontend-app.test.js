@@ -242,7 +242,7 @@ test('RSS request errors are rendered as literal text', async () => {
   cleanupDom(dom);
 });
 
-test('TMDB and Sonarr posters use the authenticated same-origin image proxy', async () => {
+test('approved public TMDB and TVDB posters use the image proxy', async () => {
   const dom = installDom(`
     <div id="tmdb"><div class="pattern-card-poster"><img></div></div>
     <div id="sonarr"><div class="pattern-card-poster"><img></div></div>
@@ -262,13 +262,74 @@ test('TMDB and Sonarr posters use the authenticated same-origin image proxy', as
 
   const sonarrCard = document.getElementById('sonarr');
   await app.loadCardPoster(sonarrCard, {
-    images: [{ coverType: 'poster', remoteUrl: 'https://sonarr.example/poster.jpg' }]
+    images: [{ coverType: 'poster', remoteUrl: 'https://artworks.thetvdb.com/poster.jpg' }]
   });
   assert.equal(
     sonarrCard.querySelector('img').getAttribute('src'),
-    `/api/image-proxy?url=${encodeURIComponent('https://sonarr.example/poster.jpg')}`
+    `/api/image-proxy?url=${encodeURIComponent('https://artworks.thetvdb.com/poster.jpg')}`
   );
 
+  cleanupDom(dom);
+});
+
+test('relative and same-origin Sonarr posters use the authenticated Sonarr proxy', async () => {
+  const dom = installDom(`
+    <img id="relative">
+    <div id="absolute"><div class="pattern-card-poster"><img></div></div>
+  `);
+  const app = makeApp();
+  app.sonarrHost = 'http://sonarr:8989';
+
+  app.loadSonarrImage({
+    images: [{ coverType: 'poster', url: '/MediaCover/7/poster.jpg' }]
+  }, document.getElementById('relative'));
+  await app.loadCardPoster(document.getElementById('absolute'), {
+    images: [{ coverType: 'poster', remoteUrl: 'http://sonarr:8989/MediaCover/8/poster.jpg' }]
+  });
+
+  assert.equal(document.getElementById('relative').getAttribute('src'), '/sonarr/MediaCover/7/poster.jpg');
+  assert.equal(
+    document.querySelector('#absolute img').getAttribute('src'),
+    '/sonarr/MediaCover/8/poster.jpg?width=200'
+  );
+  cleanupDom(dom);
+});
+
+test('Series info fallback routes a relative Sonarr poster through the Sonarr proxy', async () => {
+  const dom = installDom(`
+    <select id="series"><option value="Series" selected>Series</option></select>
+    <div id="series-info-card" class="d-none"></div>
+    <img id="series-poster">
+    <span id="series-title-zh"></span>
+    <span id="series-downloaded"></span>
+    <span id="series-missing"></span>
+    <span id="series-total"></span>
+    <div id="series-progress"></div>
+    <a id="series-sonarr-link"></a>
+  `);
+  const app = makeApp();
+  app.sonarrHost = 'http://sonarr:8989';
+  app.seriesList = [{
+    title: 'Series',
+    images: [{ coverType: 'poster', url: '/MediaCover/9/poster.jpg' }]
+  }];
+
+  await app.updateSeriesInfoCard();
+
+  assert.equal(document.getElementById('series-poster').getAttribute('src'), '/sonarr/MediaCover/9/poster.jpg');
+  cleanupDom(dom);
+});
+
+test('refreshing translated Series options preserves the current selection', () => {
+  const dom = installDom('<select id="series"><option value="Series" selected>Series</option></select>');
+  const app = makeApp();
+  const series = [{ title: 'Series', tmdbId: 42 }];
+
+  app.tmdbCache = { 42: '中文名' };
+  app.renderSeriesOptions(series);
+
+  assert.equal(document.getElementById('series').value, 'Series');
+  assert.equal(document.querySelector('#series option:checked').textContent, 'Series (中文名)');
   cleanupDom(dom);
 });
 
@@ -595,6 +656,133 @@ test('import cancel resolves its own modal when the page has another cancel butt
   cleanupDom(dom);
 });
 
+test('import dialog is labelled, focuses its first action, closes on Escape, and restores focus', async () => {
+  const dom = installDom('<button id="import-trigger" type="button">Import</button>');
+  const app = makeApp();
+  const trigger = document.getElementById('import-trigger');
+  const addEventListener = document.addEventListener.bind(document);
+  const removeEventListener = document.removeEventListener.bind(document);
+  let addedKeydown;
+  let removedKeydown;
+  document.addEventListener = (type, listener, options) => {
+    if (type === 'keydown') addedKeydown = listener;
+    return addEventListener(type, listener, options);
+  };
+  document.removeEventListener = (type, listener, options) => {
+    if (type === 'keydown') removedKeydown = listener;
+    return removeEventListener(type, listener, options);
+  };
+  trigger.focus();
+
+  const result = app.showImportModeDialog();
+  const modal = document.getElementById('import-modal');
+  const firstAction = modal.querySelector('[data-import-action="append"]');
+  assert.equal(modal.getAttribute('role'), 'dialog');
+  assert.equal(modal.getAttribute('aria-modal'), 'true');
+  assert.equal(modal.getAttribute('aria-labelledby'), 'import-modal-title');
+  assert.equal(document.activeElement, firstAction);
+
+  const cancelAction = modal.querySelector('[data-import-action="cancel"]');
+  document.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Tab', shiftKey: true, bubbles: true, cancelable: true
+  }));
+  assert.equal(document.activeElement, cancelAction);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Tab', bubbles: true, cancelable: true
+  }));
+  assert.equal(document.activeElement, firstAction);
+
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(await result, null);
+  assert.equal(document.getElementById('import-modal-overlay'), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(removedKeydown, addedKeydown);
+
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(document.getElementById('import-modal-overlay'), null);
+  cleanupDom(dom);
+});
+
+test('sort indicators expose their direction on column headers', () => {
+  const dom = installDom(`
+    <table><thead><tr>
+      <th><button type="button" class="sortable" data-sort="id">ID <i></i></button></th>
+      <th><button type="button" class="sortable" data-sort="series">Series <i></i></button></th>
+    </tr></thead></table>
+  `);
+  const app = makeApp();
+  app.currentSort = { field: 'id', direction: 'asc' };
+
+  app.updateSortIndicators();
+  assert.equal(document.querySelector('[data-sort="id"]').closest('th').getAttribute('aria-sort'), 'ascending');
+  assert.equal(document.querySelector('[data-sort="series"]').closest('th').getAttribute('aria-sort'), 'none');
+
+  app.currentSort.direction = 'desc';
+  app.updateSortIndicators();
+  assert.equal(document.querySelector('[data-sort="id"]').closest('th').getAttribute('aria-sort'), 'descending');
+  cleanupDom(dom);
+});
+
+test('tag lookup 401 aborts add-Series orchestration before the Series mutation', async () => {
+  const dom = installDom(`
+    <div id="add-series-modal"></div>
+    <button id="add-series-submit-btn"></button>
+    <select id="sonarr-root-folder"><option value="/series" selected>/series</option></select>
+    <select id="sonarr-quality-profile"><option value="1" selected>HD</option></select>
+    <select id="sonarr-series-type"><option value="anime" selected>Anime</option></select>
+    <select id="sonarr-monitor"><option value="all" selected>All</option></select>
+    <input id="sonarr-season-folder" type="checkbox" checked>
+  `);
+  const app = makeApp();
+  app.selectedSeries = { title: 'Series', tvdbId: 42, images: [] };
+  const calls = [];
+  app.apiRequest = async url => {
+    calls.push(url);
+    const error = new Error('Session expired');
+    error.status = 401;
+    throw error;
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await app.submitAddSeries();
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(calls, ['/sonarr/api/v3/tag']);
+  assert.equal(document.getElementById('add-series-submit-btn').disabled, false);
+  cleanupDom(dom);
+});
+
+test('editing a Pattern never logs its secret-bearing payload', async () => {
+  const secret = 'MIKAN-QUERY-SECRET';
+  const app = makeApp();
+  app.apiRequest = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      id: 7,
+      remote: `https://mikanani.me/RSS/Bangumi?token=${secret}`,
+      pattern: '(?<episode>\\d+)',
+      series: 'Series'
+    })
+  });
+  app.showPatternEdit = () => {};
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...parts) => logs.push(parts.map(part =>
+    typeof part === 'object' ? JSON.stringify(part) : String(part)
+  ).join(' '));
+  try {
+    await app.editPattern(7);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(logs.some(line => line.includes(secret) || line.includes('token=')), false);
+});
+
 test('two cards sharing a TMDB id make one detail request', async () => {
   const dom = installDom(`
     <div id="first"><div class="pattern-card-poster"><img></div></div>
@@ -689,7 +877,7 @@ test('filtering renders only the visible view', () => {
   cleanupDom(dom);
 });
 
-test('Series completion redraws locally without a second Pattern request', async () => {
+test('Series render immediately while TMDB refresh redraws locally without another Pattern fetch', async () => {
   const dom = installDom(`
     <input id="search-input" value="Series">
     <select id="filter-status"><option value="not-found" selected>not found</option></select>
@@ -701,28 +889,49 @@ test('Series completion redraws locally without a second Pattern request', async
   const app = makeApp();
   const series = [{ title: 'Series', tmdbId: 42 }];
   let patternFetches = 0;
-  let renderedPatterns;
+  const optionRenders = [];
+  let redraws = 0;
+  let resolveSync;
   app.allPatterns = [{ id: 1, series: 'Series', pattern: 'pattern', releasegroup: '' }];
   app.currentView = 'card';
   app.apiRequest = async url => {
     assert.equal(url, '/sonarr/api/v3/series');
     return { ok: true, status: 200, json: async () => series };
   };
-  app.syncTmdbCache = async () => {};
-  app.renderSeriesOptions = () => {};
+  app.syncTmdbCache = () => new Promise(resolve => {
+    resolveSync = () => {
+      app.tmdbCache = { 42: '中文名' };
+      resolve();
+    };
+  });
+  app.renderSeriesOptions = values => {
+    optionRenders.push(values.map(value => {
+      const zhName = app.tmdbCache[value.tmdbId];
+      return zhName ? `${value.title} (${zhName})` : value.title;
+    }));
+  };
   app.loadPatterns = () => { patternFetches += 1; };
-  app.renderCurrentView = patterns => { renderedPatterns = patterns; };
+  app.renderCurrentView = () => { redraws += 1; };
 
   const originalLog = console.log;
   console.log = () => {};
   try {
-    await app.loadSeries();
+    const loading = app.loadSeries();
+    const prompt = await Promise.race([
+      loading.then(() => 'loaded'),
+      new Promise(resolve => setImmediate(() => resolve('waiting')))
+    ]);
+    assert.equal(prompt, 'loaded');
+    assert.deepEqual(optionRenders, [['Series']]);
+    resolveSync();
+    await new Promise(resolve => setImmediate(resolve));
   } finally {
     console.log = originalLog;
   }
 
   assert.equal(patternFetches, 0);
-  assert.deepEqual(renderedPatterns, []);
+  assert.deepEqual(optionRenders, [['Series'], ['Series (中文名)']]);
+  assert.equal(redraws, 2);
   cleanupDom(dom);
 });
 
@@ -800,6 +1009,18 @@ test('HTML pins CDN assets without inline script handlers and names icon control
   assert.equal(scripts[0].crossOrigin, 'anonymous');
   assert.equal(document.querySelector('[onclick], [onerror]'), null);
   assert.equal(document.querySelector('script:not([src])'), null);
+
+  const importButton = document.getElementById('import-btn');
+  assert.ok(importButton);
+  assert.equal(importButton.tagName, 'BUTTON');
+  assert.equal(importButton.type, 'button');
+  importButton.focus();
+  assert.equal(document.activeElement, importButton);
+  const sortButtons = Array.from(document.querySelectorAll('thead button.sortable'));
+  assert.equal(sortButtons.length, 6);
+  sortButtons[0].focus();
+  assert.equal(document.activeElement, sortButtons[0]);
+  assert.equal(document.getElementById('select-all').getAttribute('aria-label'), '选择全部 Patterns');
 
   const unnamedIconControls = Array.from(document.querySelectorAll('button, label'))
     .filter(control => !control.textContent.trim() && control.querySelector('i, .navbar-toggler-icon'))

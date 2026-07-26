@@ -10,10 +10,11 @@ const { createRssRouter } = require('./routes/rss');
 const { createTmdbRouter } = require('./routes/tmdb');
 const { createImageProxyRouter } = require('./routes/imageProxy');
 
-function createApp({ config, database, oidcProvider, httpClient = axios, logger = console, clock = Date.now }) {
+function createApp({ config, database, oidcProvider, oidcProviderFactory, httpClient = axios, logger = console, clock = Date.now }) {
   const app = express();
+  if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops);
   const sessionManager = createSessionManager({ config, clock });
-  const authRouter = createAuthRouter({ config, oidcProvider, httpClient, logger, clock, sessionManager });
+  const authRouter = createAuthRouter({ config, oidcProvider, oidcProviderFactory, httpClient, logger, clock, sessionManager });
   const dependencies = { config, database, oidcProvider, httpClient, logger, verifyToken: authRouter.verifyToken };
 
   app.use((req, res, next) => {

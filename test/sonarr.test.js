@@ -41,9 +41,13 @@ test('Sonarr sends only the header API key and preserves streamed request bodies
       received = {
         url: req.url,
         apiKey: req.headers['x-api-key'],
+        cookie: req.headers.cookie,
+        authorization: req.headers.authorization,
+        proxyAuthorization: req.headers['proxy-authorization'],
         body: Buffer.concat(chunks).toString('utf8')
       };
       res.setHeader('content-type', 'application/json');
+      res.setHeader('set-cookie', 'upstream-session=UPSTREAM-COOKIE-SECRET; Path=/');
       res.end(JSON.stringify({ ok: true }));
     });
   });
@@ -78,7 +82,10 @@ test('Sonarr sends only the header API key and preserves streamed request bodies
     {
       method: 'POST',
       headers: {
-        cookie: jar.header(),
+        cookie: `${jar.header()}; browser-sentinel=BROWSER-COOKIE-SECRET`,
+        authorization: 'Bearer BROWSER-AUTH-SECRET',
+        'proxy-authorization': 'Basic BROWSER-PROXY-AUTH-SECRET',
+        'x-api-key': 'INBOUND-X-API-KEY-SECRET',
         origin: appHttp.baseUrl,
         'content-type': 'application/json'
       },
@@ -91,9 +98,29 @@ test('Sonarr sends only the header API key and preserves streamed request bodies
   assert.deepEqual(received, {
     url: '/api/v3/series?term=kept',
     apiKey: 'sonarr-secret',
+    cookie: undefined,
+    authorization: undefined,
+    proxyAuthorization: undefined,
     body: '{"streamed":true}'
   });
-  assert.equal(logs.some(line => /sonarr-secret|BROWSER-SECRET|INBOUND-KEY|token=|apikey=|term=/.test(line)), false);
+  assert.equal(response.headers.has('set-cookie'), false);
+  const poster = await fetch(`${appHttp.baseUrl}/sonarr/MediaCover/8/poster.jpg?width=200`, {
+    headers: {
+      cookie: `${jar.header()}; poster-sentinel=POSTER-COOKIE-SECRET`,
+      authorization: 'Bearer POSTER-AUTH-SECRET'
+    }
+  });
+  assert.equal(poster.status, 200);
+  assert.equal(poster.headers.has('set-cookie'), false);
+  assert.deepEqual(received, {
+    url: '/MediaCover/8/poster.jpg?width=200',
+    apiKey: 'sonarr-secret',
+    cookie: undefined,
+    authorization: undefined,
+    proxyAuthorization: undefined,
+    body: ''
+  });
+  assert.equal(logs.some(line => /sonarr-secret|BROWSER-SECRET|POSTER-.*-SECRET|INBOUND-(?:KEY|X-API-KEY)|token=|apikey=|term=/.test(line)), false);
   assert.match(logs.join('\n'), /method=POST path=\/sonarr\/api\/v3\/series status=200 duration_ms=\d+/);
 
   const failed = await fetch(`${appHttp.baseUrl}/sonarr/fail?token=ERROR-QUERY-SECRET`, {

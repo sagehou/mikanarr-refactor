@@ -6,7 +6,8 @@ From the repository root, create the only configuration file required by Compose
 
 ```bash
 cp .env.example .env
-# Edit .env: set SONARR_API_KEY, SONARR_HOST, ADMIN_USERNAME, and ADMIN_PASSWORD.
+# Before starting, edit .env: set Sonarr values and choose either a real local login pair or complete OIDC.
+# The unedited example intentionally fails closed.
 # For the direct loopback HTTP path below, also set COOKIE_SECURE=false.
 docker compose pull
 docker compose up -d --wait
@@ -32,6 +33,8 @@ OIDC_GROUPS_CLAIM=groups
 ```
 
 `OIDC_ALLOWED_SUBJECTS` is a comma-separated subject allow-list. `OIDC_GROUPS_CLAIM` defaults to `groups`. The legacy `OIDC_AUTH_URL` and `OIDC_TOKEN_URL` settings are rejected.
+
+`TRUST_PROXY_HOPS` stays `0` for direct access. Behind a fixed, protected proxy chain, set it to the exact hop count only. Too large a value or a direct path around the proxies allows `X-Forwarded-For` spoofing and defeats per-client login throttling.
 
 ## First use
 

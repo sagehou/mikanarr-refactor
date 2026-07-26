@@ -14,6 +14,7 @@ Start or update a deployment with:
 
 ```bash
 cp .env.example .env
+# Configure a real local login pair or complete OIDC before starting.
 docker compose pull
 docker compose up -d --wait
 ```

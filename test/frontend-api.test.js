@@ -27,6 +27,22 @@ test('uses Cookie credentials and throws parsed non-2xx errors', async () => {
   assert.equal(calls[0].options.headers.has('authorization'), false);
 });
 
+test('retains response status for valid non-object JSON error bodies', async () => {
+  for (const body of ['null', '"upstream text"', '[]']) {
+    const client = createClient({
+      fetchImpl: async () => new Response(body, {
+        status: 502,
+        headers: { 'content-type': 'application/json' }
+      })
+    });
+    await assert.rejects(
+      () => client.request('/api/patterns'),
+      error => error.message === 'Request failed (502)' && error.status === 502 && error.code === undefined,
+      body
+    );
+  }
+});
+
 test('session, login, and logout use the Cookie auth endpoints', async () => {
   const calls = [];
   const client = createClient({

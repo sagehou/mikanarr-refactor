@@ -6,6 +6,7 @@ Use `docker compose` from the repository root with configuration in root `.env` 
 
 ```bash
 cp .env.example .env
+# Edit .env before starting: configure a real local login pair or complete OIDC.
 docker compose pull
 docker compose up -d --wait
 ```

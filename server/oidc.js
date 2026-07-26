@@ -2,9 +2,14 @@ const oidcModule = import('openid-client');
 
 async function createOidcProvider(config, clientPromise = oidcModule) {
   const client = await clientPromise;
-  const discovered = await client.discovery(
-    new URL(config.issuer), config.clientId, config.clientSecret
-  );
+  const issuer = new URL(config.issuer);
+  const allowLocalHttp = config.allowInsecureRequests === true &&
+    issuer.protocol === 'http:' && issuer.hostname === 'localhost';
+  const discovered = allowLocalHttp
+    ? await client.discovery(issuer, config.clientId, config.clientSecret, undefined, {
+      execute: [client.allowInsecureRequests]
+    })
+    : await client.discovery(issuer, config.clientId, config.clientSecret);
   return {
     async authorizationRequest() {
       const verifier = client.randomPKCECodeVerifier();

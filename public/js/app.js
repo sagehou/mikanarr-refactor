@@ -152,6 +152,7 @@ setupEventListeners() {
     document.getElementById('pattern').addEventListener('input', () => this.updateRssPreview());
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
+    document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-input').click());
     document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
     
     // Mikan导入
@@ -452,6 +453,22 @@ setupEventListeners() {
     return `/api/image-proxy?url=${encodeURIComponent(parsed.href)}`;
   }
 
+  sonarrImageUrl(url) {
+    if (!url) return '/images/icon.svg';
+    try {
+      const sonarrBase = this.sonarrHost ? new URL(this.sonarrHost) : null;
+      const parsed = new URL(url, sonarrBase || window.location.origin);
+      const relative = !/^[a-z][a-z\d+.-]*:/i.test(url) && !url.startsWith('//');
+      if (relative || (sonarrBase && parsed.origin === sonarrBase.origin)) {
+        const path = parsed.pathname.startsWith('/sonarr/') ? parsed.pathname : `/sonarr${parsed.pathname}`;
+        return `${path}${parsed.search}`;
+      }
+      return this.imageProxyUrl(parsed.href);
+    } catch (_) {
+      return '/images/icon.svg';
+    }
+  }
+
   externalHttpUrl(url) {
     try {
       const parsed = new URL(url, window.location.origin);
@@ -470,11 +487,7 @@ setupEventListeners() {
                     series.images?.find(i => i.coverType === 'poster')?.url;
                     
     if (posterUrl) {
-      if (posterUrl.startsWith('/')) {
-         const host = (this.sonarrHost || '').replace(/\/$/, '');
-         posterUrl = `${host}${posterUrl}`;
-      }
-      img.src = this.imageProxyUrl(posterUrl);
+      img.src = this.sonarrImageUrl(posterUrl);
     } else {
       img.src = '/images/icon.svg';
     }
@@ -617,6 +630,7 @@ setupEventListeners() {
         return newTag.id;
       }
     } catch (e) {
+      if (e.status === 401) throw e;
       console.warn('[getOrCreateMikanarrTag] Failed:', e);
     }
     return null;
@@ -641,27 +655,27 @@ setupEventListeners() {
     submitBtn.disabled = true;
     submitBtn.textContent = '添加中...';
 
-    // Get tag ID
-    const tagId = await this.getOrCreateMikanarrTag();
-    const tags = tagId ? [tagId] : [];
-
-    const payload = {
-      title: this.selectedSeries.title,
-      qualityProfileId: qualityProfileId,
-      path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
-      tvdbId: this.selectedSeries.tvdbId,
-      seasonFolder: seasonFolder,
-      monitored: monitor !== 'none',
-      seriesType: seriesType,
-      images: this.selectedSeries.images,
-      tags: tags,
-      addOptions: {
-        monitor: monitor,
-        searchForMissingEpisodes: false
-      }
-    };
-
     try {
+      // Get tag ID
+      const tagId = await this.getOrCreateMikanarrTag();
+      const tags = tagId ? [tagId] : [];
+
+      const payload = {
+        title: this.selectedSeries.title,
+        qualityProfileId: qualityProfileId,
+        path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
+        tvdbId: this.selectedSeries.tvdbId,
+        seasonFolder: seasonFolder,
+        monitored: monitor !== 'none',
+        seriesType: seriesType,
+        images: this.selectedSeries.images,
+        tags: tags,
+        addOptions: {
+          monitor: monitor,
+          searchForMissingEpisodes: false
+        }
+      };
+
       const response = await this.apiRequest('/sonarr/api/v3/series', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -777,14 +791,13 @@ setupEventListeners() {
       console.log('[loadSeries] Loaded', series.length, 'series');
       
       this.seriesList = series;
-
-      // Sync TMDB Chinese names for new series
-      await this.syncTmdbCache(series);
-      
       this.renderSeriesOptions(series);
-
-      // Reapply status/text filters against the completed Series/TMDB state.
       this.filterPatterns(document.getElementById('search-input').value);
+
+      void this.syncTmdbCache(series).then(() => {
+        this.renderSeriesOptions(series);
+        this.filterPatterns(document.getElementById('search-input').value);
+      }).catch(() => console.error('[loadSeries] TMDB refresh failed'));
     } catch (error) {
       console.error('[loadSeries] Failed to load series:', error);
       const errorMsg = error.message || 'Unknown error';
@@ -848,14 +861,13 @@ setupEventListeners() {
 
   renderSeriesOptions(series) {
     const select = document.getElementById('series');
+    const selectedSeries = select.value;
     select.innerHTML = '<option value="">选择系列...</option>';
     
     if (!series || series.length === 0) {
       console.warn('[renderSeriesOptions] No series to render');
       return;
     }
-    
-    console.log('[renderSeriesOptions] Rendering', series.length, 'series');
     
     series.forEach(s => {
       const option = document.createElement('option');
@@ -867,8 +879,8 @@ setupEventListeners() {
       
       select.appendChild(option);
     });
+    select.value = selectedSeries;
     
-    console.log('[renderSeriesOptions] Series options added to select element');
   }
 
   // ===== Sonarr Deep Integration - Series Info Card =====
@@ -911,13 +923,10 @@ setupEventListeners() {
       const poster = series.images?.find(i => i.coverType === 'poster');
       if (poster) {
         posterUrl = poster.remoteUrl || poster.url;
-        if (posterUrl?.startsWith('/')) {
-          posterUrl = `${this.sonarrHost}${posterUrl}`;
-        }
       }
     }
 
-    posterImg.src = posterUrl ? this.imageProxyUrl(posterUrl) : '/images/icon.svg';
+    posterImg.src = posterUrl ? this.sonarrImageUrl(posterUrl) : '/images/icon.svg';
 
     // Update title (Chinese name if available)
     const zhName = series.tmdbId ? this.tmdbCache[series.tmdbId] : null;
@@ -1474,15 +1483,11 @@ setupEventListeners() {
       }
       
       if (imageUrl) {
-        let finalUrl = imageUrl;
-        if (finalUrl.startsWith('/')) {
-          finalUrl = `${this.sonarrHost}${finalUrl}`;
-        }
         // 如果是 Sonarr 内部代理图片，尝试添加 width 参数 (取决于 Sonarr 版本支持)
-        if (finalUrl.includes('/MediaCover')) {
-           finalUrl += '?width=200'; 
+        if (imageUrl.includes('/MediaCover')) {
+          imageUrl += `${imageUrl.includes('?') ? '&' : '?'}width=200`;
         }
-        img.src = this.imageProxyUrl(finalUrl);
+        img.src = this.sonarrImageUrl(imageUrl);
       }
     } catch (e) {
       console.warn('[loadCardPoster] Failed:', e);
@@ -1930,7 +1935,6 @@ setupEventListeners() {
       }
 
       const pattern = await response.json();
-      console.log('[editPattern] Loaded pattern:', pattern);
       this.currentPatternId = id;
       this.showPatternEdit(pattern);
     } catch (error) {
@@ -2331,6 +2335,9 @@ setupEventListeners() {
       // 创建对话框
       const modal = document.createElement('div');
       modal.id = 'import-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'import-modal-title');
       modal.style.cssText = `
         background: white;
         padding: 2rem;
@@ -2345,7 +2352,7 @@ setupEventListeners() {
       
       modal.innerHTML = `
         <div style="margin-bottom: 1.5rem;">
-          <h3 style="margin: 0 0 0.5rem 0; color: #495057; font-weight: 600;">选择导入模式</h3>
+          <h3 id="import-modal-title" style="margin: 0 0 0.5rem 0; color: #495057; font-weight: 600;">选择导入模式</h3>
           <p style="margin: 0; color: #6c757d;">请选择如何导入patterns数据：</p>
         </div>
         
@@ -2381,26 +2388,43 @@ setupEventListeners() {
       const appendBtn = modal.querySelector('[data-import-action="append"]');
       const overwriteBtn = modal.querySelector('[data-import-action="overwrite"]');
       const cancelBtn = modal.querySelector('[data-import-action="cancel"]');
-      
-      // 添加事件监听器
-      const handleConfirm = (mode) => {
-        document.body.removeChild(overlay);
-        resolve(mode);
+      const previousFocus = document.activeElement;
+      let settled = false;
+
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        if (previousFocus?.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
+        resolve(value);
       };
-      
-      const handleCancel = () => {
-        document.body.removeChild(overlay);
-        resolve(null);
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(null);
+        } else if (event.key === 'Tab') {
+          const firstAction = appendBtn;
+          const lastAction = cancelBtn;
+          if (event.shiftKey && (!modal.contains(document.activeElement) || document.activeElement === firstAction)) {
+            event.preventDefault();
+            lastAction.focus();
+          } else if (!event.shiftKey && (!modal.contains(document.activeElement) || document.activeElement === lastAction)) {
+            event.preventDefault();
+            firstAction.focus();
+          }
+        }
       };
-      
-      appendBtn.addEventListener('click', () => handleConfirm('append'));
-      overwriteBtn.addEventListener('click', () => handleConfirm('overwrite'));
-      cancelBtn.addEventListener('click', handleCancel);
+
+      appendBtn.addEventListener('click', () => finish('append'));
+      overwriteBtn.addEventListener('click', () => finish('overwrite'));
+      cancelBtn.addEventListener('click', () => finish(null));
+      document.addEventListener('keydown', handleKeydown);
       
       // 点击背景关闭
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-          handleCancel();
+          finish(null);
         }
       });
       
@@ -2408,6 +2432,7 @@ setupEventListeners() {
       modal.addEventListener('click', (e) => {
         e.stopPropagation();
       });
+      appendBtn.focus();
     });
   }
 
@@ -2474,6 +2499,7 @@ setupEventListeners() {
     // 清除所有排序指示器
     document.querySelectorAll('.sortable').forEach(th => {
       th.classList.remove('asc', 'desc');
+      th.closest('th')?.setAttribute('aria-sort', 'none');
       const icon = th.querySelector('i');
       if (icon) {
         icon.className = 'bi bi-arrow-down-up';
@@ -2484,6 +2510,10 @@ setupEventListeners() {
     const currentTh = document.querySelector(`[data-sort="${this.currentSort.field}"]`);
     if (currentTh) {
       currentTh.classList.add(this.currentSort.direction);
+      currentTh.closest('th')?.setAttribute(
+        'aria-sort',
+        this.currentSort.direction === 'asc' ? 'ascending' : 'descending'
+      );
       const icon = currentTh.querySelector('i');
       if (icon) {
         icon.className = `bi bi-arrow-down-up ${this.currentSort.direction}`;

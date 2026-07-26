@@ -25,9 +25,13 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
     },
     on: {
       proxyReq(proxyReq) {
+        proxyReq.removeHeader('cookie');
+        proxyReq.removeHeader('authorization');
+        proxyReq.removeHeader('proxy-authorization');
         proxyReq.setHeader('X-Api-Key', config.sonarr.apiKey);
       },
       proxyRes(proxyRes, req, res) {
+        delete proxyRes.headers['set-cookie'];
         proxyRes.once('aborted', () => res.destroy());
         const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
         logger.log(`[Sonarr Proxy] method=${req.method} path=${pathname} status=${proxyRes.statusCode} duration_ms=${Date.now() - req.sonarrStartedAt}`);

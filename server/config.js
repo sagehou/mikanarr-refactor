@@ -27,7 +27,7 @@ function boolean(env, key, fallback) {
   throw new ConfigError('INVALID_CONFIG', `${key} must be true or false`);
 }
 
-function normalizedUrl(value, key, { requireHttps = false, allowLocalHttp = false } = {}) {
+function normalizedUrl(value, key, { requireHttps = false, allowLocalHttp = false, stripTrailingSlash = true } = {}) {
   if (!value) return '';
   let url;
   try {
@@ -41,7 +41,8 @@ function normalizedUrl(value, key, { requireHttps = false, allowLocalHttp = fals
   if (requireHttps && url.protocol !== 'https:' && !(allowLocalHttp && url.hostname === 'localhost')) {
     throw new ConfigError('INVALID_CONFIG', `${key} must use HTTPS`);
   }
-  return url.toString().replace(/\/$/, '');
+  const normalized = url.toString();
+  return stripTrailingSlash ? normalized.replace(/\/$/, '') : normalized;
 }
 
 function loadConfig(env = process.env) {
@@ -69,11 +70,16 @@ function loadConfig(env = process.env) {
   }
 
   const allowLocalHttp = nodeEnv === 'test' || nodeEnv === 'development';
-  const oidcIssuer = normalizedUrl(env.OIDC_ISSUER, 'OIDC_ISSUER', { requireHttps: true, allowLocalHttp });
-  const oidcRedirectUri = normalizedUrl(env.OIDC_REDIRECT_URI, 'OIDC_REDIRECT_URI', { requireHttps: true, allowLocalHttp });
+  const oidcIssuer = normalizedUrl(env.OIDC_ISSUER, 'OIDC_ISSUER', {
+    requireHttps: true, allowLocalHttp, stripTrailingSlash: false
+  });
+  const oidcRedirectUri = normalizedUrl(env.OIDC_REDIRECT_URI, 'OIDC_REDIRECT_URI', {
+    requireHttps: true, allowLocalHttp, stripTrailingSlash: false
+  });
   return Object.freeze({
     nodeEnv,
     port: integer(env, 'PORT', 12306, 0, 65535),
+    trustProxyHops: integer(env, 'TRUST_PROXY_HOPS', 0, 0, 5),
     dataDir: path.resolve(env.DATA_DIR || path.join(__dirname, '../data')),
     cookieSecure: boolean(env, 'COOKIE_SECURE', nodeEnv === 'production'),
     http: Object.freeze({
@@ -87,6 +93,7 @@ function loadConfig(env = process.env) {
         enabled: oidcComplete,
         issuer: oidcIssuer, clientId: env.OIDC_CLIENT_ID || '', clientSecret: env.OIDC_CLIENT_SECRET || '',
         redirectUri: oidcRedirectUri, autoLogin: boolean(env, 'OIDC_AUTO_LOGIN', false),
+        allowInsecureRequests: Boolean(oidcIssuer && new URL(oidcIssuer).protocol === 'http:'),
         allowedSubjects, requiredGroup, groupsClaim: env.OIDC_GROUPS_CLAIM?.trim() || 'groups'
       })
     }),

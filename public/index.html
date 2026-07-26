@@ -108,10 +108,10 @@
               <button class="btn btn-outline-secondary" id="export-btn" title="导出配置" aria-label="导出配置">
                 <i class="bi bi-download"></i>
               </button>
-              <label class="btn btn-outline-primary" title="导入配置" aria-label="导入配置">
+              <button class="btn btn-outline-primary" id="import-btn" type="button" title="导入配置" aria-label="导入配置">
                 <i class="bi bi-upload"></i>
-                <input type="file" id="import-input" accept=".json" style="display: none;">
-              </label>
+              </button>
+              <input type="file" id="import-input" accept=".json" hidden>
               <input type="text" class="form-control" id="search-input" placeholder="搜索..." style="max-width: 200px;">
               <button class="btn btn-primary" id="new-pattern-btn">
                 <i class="bi bi-plus-lg"></i> 新建
@@ -131,14 +131,14 @@
                 <table class="table table-hover">
 <thead>
                     <tr>
-                      <th><input type="checkbox" class="form-check-input" id="select-all"></th>
-                      <th class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="series">系列 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="season">季度 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="language">语言 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="quality">质量 <i class="bi bi-arrow-down-up"></i></th>
+                      <th scope="col"><input type="checkbox" class="form-check-input" id="select-all" aria-label="选择全部 Patterns"></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="series">系列 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="season">季度 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="language">语言 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="quality">质量 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
                       <th>进度</th>
-                      <th class="sortable" data-sort="last_matched_at">最后匹配 <i class="bi bi-arrow-down-up"></i></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="last_matched_at">最后匹配 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
                       <th>字幕组</th>
                       <th>操作</th>
                     </tr>

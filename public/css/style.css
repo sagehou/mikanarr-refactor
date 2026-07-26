@@ -404,10 +404,20 @@ select:focus {
 
 /* 排序表头样式 */
 .sortable {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
   cursor: pointer;
+  display: block;
+  font: inherit;
+  font-weight: inherit;
+  margin: 0;
+  padding: 0 1.5rem 0 0;
   user-select: none;
   position: relative;
-  padding-right: 1.5rem !important;
+  text-align: left;
+  width: 100%;
 }
 
 .sortable:hover {

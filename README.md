@@ -8,7 +8,8 @@ Use the checked-in Compose file and the published GHCR image. Configuration belo
 
 ```bash
 cp .env.example .env
-# Edit .env and set the required values.
+# Before continuing, edit .env and configure either a real local login pair or complete OIDC.
+# The unedited example intentionally fails closed at startup.
 docker compose pull
 docker compose up -d --wait
 ```
@@ -22,6 +23,8 @@ The published port is loopback-only by default (`127.0.0.1:12306`). Put a TLS-te
 `SONARR_API_KEY` and `SONARR_HOST` configure the server-side Sonarr connection. `SONARR_PUBLIC_URL` is optional and is only the browser-facing Sonarr URL. `TMDB_API_KEY` is optional.
 
 Local login is enabled only when `ADMIN_USERNAME` and `ADMIN_PASSWORD` are both non-empty. Supplying only one is not a valid local login. `COOKIE_SECURE` defaults to true in production; set it to `false` only for local HTTP development or testing, never for a TLS deployment.
+
+`TRUST_PROXY_HOPS` defaults to `0`, so client-supplied `X-Forwarded-For` is ignored. If Mikanarr is reachable only through a fixed reverse-proxy chain, set it to the exact number of proxy hops (for example, `1` for one proxy). Never set a larger convenience value or expose a shorter direct path: doing so lets clients spoof their throttling identity and bypass or misdirect login limits.
 
 OIDC is optional but, when used, requires this complete tuple: `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI`. The issuer is discovered from its issuer URL, for example:
 
@@ -51,9 +54,16 @@ docker compose up -d --wait
 To restore, stop the service, first make a fresh backup, then run the following command with the intended archive path. It deliberately replaces all application data and restores node ownership.
 
 ```bash
+(
+set -eu
 docker compose stop mikanarr
+mkdir -p backups
+backup="backups/mikanarr-data-before-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
+( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
+test -s "$backup"
 docker compose run --rm --no-deps --user root -v "$PWD/backups/mikanarr-data-YYYY-MM-DD.tar.gz:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
 docker compose up -d --wait
+)
 ```
 
 Treat Mikan feed URLs/tokens, Sonarr API keys, `.env`, database backups, and `/app/data/jwt.key` as secrets. Do not paste them into issues or logs. If exposed: revoke/regenerate the Mikan feed token and update affected patterns; generate a new Sonarr API key and update root `.env`; then stop the service, make a backup, remove `/app/data/jwt.key` and `/app/data/jwt.key.pub` through a one-off Compose run, and start it again. New keys invalidate all existing sessions.

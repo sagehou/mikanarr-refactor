@@ -13,15 +13,20 @@ function credentialsMatch(actual, expected) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-function createAuthRouter({ config, sessionManager, oidcProvider, clock = Date.now, logger = console }) {
+function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFactory = createOidcProvider, clock = Date.now, logger = console }) {
   const router = express.Router();
   const failures = new Map();
   let discoveredProvider;
 
   async function provider() {
     if (oidcProvider) return oidcProvider;
-    discoveredProvider ||= createOidcProvider(config.auth.oidc);
-    return discoveredProvider;
+    const pending = discoveredProvider || (discoveredProvider = oidcProviderFactory(config.auth.oidc));
+    try {
+      return await pending;
+    } catch (error) {
+      if (discoveredProvider === pending) discoveredProvider = undefined;
+      throw error;
+    }
   }
 
   function clearOidcCookies(res) {
@@ -37,6 +42,15 @@ function createAuthRouter({ config, sessionManager, oidcProvider, clock = Date.n
     if (!config.auth.local.enabled) {
       return res.status(404).json({ error: 'Local authentication is not available', code: 'LOCAL_AUTH_DISABLED' });
     }
+    const now = clock();
+    let failure = failures.get(req.ip);
+    if (failure && now - failure.startedAt >= FAILURE_WINDOW_MS) {
+      failures.delete(req.ip);
+      failure = undefined;
+    }
+    if (failure?.count >= 5) {
+      return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
+    }
     const { username, password } = req.body || {};
     if (credentialsMatch(username, config.auth.local.username) && credentialsMatch(password, config.auth.local.password)) {
       failures.delete(req.ip);
@@ -44,13 +58,7 @@ function createAuthRouter({ config, sessionManager, oidcProvider, clock = Date.n
       sessionManager.issue(res, user);
       return res.json({ user });
     }
-    const now = clock();
-    let failure = failures.get(req.ip);
-    if (!failure || now - failure.startedAt >= FAILURE_WINDOW_MS) failure = { count: 0, startedAt: now };
-    if (failure.count >= 5) {
-      failures.set(req.ip, failure);
-      return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
-    }
+    if (!failure) failure = { count: 0, startedAt: now };
     failure.count += 1;
     failures.set(req.ip, failure);
     return res.status(401).json({ error: 'Username or password incorrect', code: 'INVALID_CREDENTIALS' });

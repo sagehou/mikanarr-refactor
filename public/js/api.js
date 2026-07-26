@@ -28,6 +28,7 @@
       } catch (_) {
         payload = {};
       }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) payload = {};
 
       if (response.status === 401 && !skipUnauthorized) {
         if (!unauthorizedHandler) {

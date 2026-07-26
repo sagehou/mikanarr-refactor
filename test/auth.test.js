@@ -18,6 +18,14 @@ async function authenticatedFixture(options) {
   return { fixture, jar, response };
 }
 
+function loginFrom(fixture, address, password = 'wrong') {
+  return fetch(`${fixture.baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': address },
+    body: JSON.stringify({ username: 'admin', password })
+  });
+}
+
 test('empty JSON never authenticates when local auth is disabled', async t => {
   const fixture = await createAppFixture({ oidcOnly: true, oidcProvider: {} });
   t.after(fixture.close);
@@ -159,10 +167,39 @@ test('local login rate limits the sixth failure per IP for 15 minutes', async t 
 test('successful login resets the failure counter', async t => {
   const fixture = await createAppFixture({ clock: () => 1_000 });
   t.after(fixture.close);
-  for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await login(fixture, 'admin', 'wrong')).status, 401);
+  for (let attempt = 0; attempt < 4; attempt += 1) assert.equal((await login(fixture, 'admin', 'wrong')).status, 401);
   assert.equal((await login(fixture, 'admin', 'secret')).status, 200);
   for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await login(fixture, 'admin', 'wrong')).status, 401);
   assert.equal((await login(fixture, 'admin', 'wrong')).status, 429);
+});
+
+test('five failures block even correct credentials until the window expires', async t => {
+  let now = 1_000;
+  const fixture = await createAppFixture({ clock: () => now });
+  t.after(fixture.close);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal((await login(fixture, 'admin', 'wrong')).status, 401);
+  }
+  assert.equal((await login(fixture, 'admin', 'secret')).status, 429);
+
+  now += 15 * 60 * 1000;
+  assert.equal((await login(fixture, 'admin', 'secret')).status, 200);
+});
+
+test('forwarded client addresses are ignored unless exact proxy hops are trusted', async t => {
+  const direct = await createAppFixture({ clock: () => 1_000 });
+  t.after(direct.close);
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    assert.equal((await loginFrom(direct, `198.51.100.${attempt}`)).status, 401);
+  }
+  assert.equal((await loginFrom(direct, '198.51.100.99', 'secret')).status, 429);
+
+  const proxied = await createAppFixture({ clock: () => 1_000, env: { TRUST_PROXY_HOPS: '1' } });
+  t.after(proxied.close);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal((await loginFrom(proxied, '198.51.100.1')).status, 401);
+  }
+  assert.equal((await loginFrom(proxied, '198.51.100.2', 'secret')).status, 200);
 });
 
 test('application enforces private and public key file modes', async t => {

@@ -34,6 +34,8 @@ OIDC_ALLOWED_SUBJECTS=alice-subject
 
 `OIDC_ALLOWED_SUBJECTS` is comma-separated. OIDC is rejected if its issuer/client/secret/redirect tuple is incomplete or neither allowed subjects nor a required group is configured. `OIDC_AUTH_URL` and `OIDC_TOKEN_URL` are legacy settings and are rejected; use `OIDC_ISSUER` instead. Keep `COOKIE_SECURE=true` behind HTTPS; `COOKIE_SECURE=false` is only appropriate for local HTTP development/testing.
 
+If login throttling groups every user together behind a reverse proxy, set `TRUST_PROXY_HOPS` to the exact number of trusted hops and ensure no client can reach Mikanarr through a shorter path. Keep the default `0` for direct access. Never use a guessed or oversized value: clients could spoof `X-Forwarded-For` to evade the limit.
+
 ## Sonarr requests fail
 
 Check that `SONARR_HOST` is an address reachable by the Mikanarr container and that `SONARR_API_KEY` is current. `SONARR_PUBLIC_URL` is optional and does not change the server-side connection.

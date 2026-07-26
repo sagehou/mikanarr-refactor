@@ -7,6 +7,9 @@
     "node": ">=22.13.0 <23"
   },
   "packageManager": "npm@11.18.0",
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  },
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

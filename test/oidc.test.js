@@ -155,6 +155,25 @@ test('provider exchange errors use fixed text and clear temporary cookies', asyn
   assert.equal(messages.some(message => message.includes('provider-secret')), false);
 });
 
+test('failed OIDC discovery is retried and a successful provider is reused', async t => {
+  let attempts = 0;
+  const discoveredProvider = fakeProvider();
+  const fixture = await createAppFixture({
+    oidcOnly: true,
+    oidcProviderFactory: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary discovery failure');
+      return discoveredProvider;
+    }
+  });
+  t.after(fixture.close);
+
+  assert.equal((await fetch(`${fixture.baseUrl}/auth/oidc/login`, { redirect: 'manual' })).status, 500);
+  assert.equal((await fetch(`${fixture.baseUrl}/auth/oidc/login`, { redirect: 'manual' })).status, 302);
+  assert.equal((await fetch(`${fixture.baseUrl}/auth/oidc/login`, { redirect: 'manual' })).status, 302);
+  assert.equal(attempts, 2);
+});
+
 test('OIDC authorization allows only configured subjects or groups', () => {
   const { isOidcAuthorized } = require('../server/oidc');
   const config = { allowedSubjects: ['alice'], requiredGroup: 'admins', groupsClaim: 'roles' };
@@ -201,4 +220,28 @@ test('OIDC wrapper passes every callback check to the authorization code grant',
       idTokenExpected: true
     }
   });
+});
+
+test('OIDC wrapper enables insecure requests only for approved localhost HTTP config', async () => {
+  const calls = [];
+  const allowInsecureRequests = () => {};
+  const client = {
+    allowInsecureRequests,
+    async discovery(...args) {
+      calls.push(args);
+      return { marker: 'configuration' };
+    }
+  };
+  const { createOidcProvider } = require('../server/oidc');
+  await createOidcProvider({
+    issuer: 'http://localhost:8080/', clientId: 'client-id', clientSecret: 'client-secret',
+    redirectUri: 'http://localhost:12306/auth/oidc/callback', allowInsecureRequests: true
+  }, Promise.resolve(client));
+  await createOidcProvider({
+    issuer: 'https://identity.example/', clientId: 'client-id', clientSecret: 'client-secret',
+    redirectUri: 'https://app.example/auth/oidc/callback', allowInsecureRequests: false
+  }, Promise.resolve(client));
+
+  assert.deepEqual(calls[0].slice(3), [undefined, { execute: [allowInsecureRequests] }]);
+  assert.deepEqual(calls[1].slice(3), []);
 });
