@@ -27,7 +27,8 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
       proxyReq(proxyReq) {
         proxyReq.setHeader('X-Api-Key', config.sonarr.apiKey);
       },
-      proxyRes(proxyRes, req) {
+      proxyRes(proxyRes, req, res) {
+        proxyRes.once('aborted', () => res.destroy());
         const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
         logger.log(`[Sonarr Proxy] method=${req.method} path=${pathname} status=${proxyRes.statusCode} duration_ms=${Date.now() - req.sonarrStartedAt}`);
       },
@@ -37,6 +38,8 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
         if (!res.headersSent) {
           res.writeHead(502, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Sonarr upstream request failed', code: 'UPSTREAM_FAILURE' }));
+        } else {
+          res.destroy();
         }
       }
     }

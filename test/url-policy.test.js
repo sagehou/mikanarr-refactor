@@ -47,7 +47,8 @@ for (const blocked of [
   'https://mikanani.me.evil.example/rss',
   'https://mikanani.me@127.0.0.1/private',
   'http://mikanani.me/rss',
-  'https://mikanani.me:444/rss'
+  'https://mikanani.me:444/rss',
+  'https://cdn.mikanani.me/rss'
 ]) {
   test(`rejects ${blocked}`, () => {
     assert.throws(

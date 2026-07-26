@@ -73,15 +73,18 @@ test('Sonarr sends only the header API key and preserves streamed request bodies
   const jar = new CookieJar();
   await login(appHttp, 'admin', 'secret', jar);
 
-  const response = await fetch(`${appHttp.baseUrl}/sonarr/api/v3/series?token=BROWSER-SECRET&apikey=INBOUND-KEY&term=kept`, {
-    method: 'POST',
-    headers: {
-      cookie: jar.header(),
-      origin: appHttp.baseUrl,
-      'content-type': 'application/json'
-    },
-    body: '{"streamed":true}'
-  });
+  const response = await fetch(
+    `${appHttp.baseUrl}/sonarr/api/v3/series?token=BROWSER-SECRET-1&token=BROWSER-SECRET-2&ToKeN=BROWSER-SECRET-3&apikey=INBOUND-KEY-1&apikey=INBOUND-KEY-2&ApiKey=INBOUND-KEY-3&term=kept`,
+    {
+      method: 'POST',
+      headers: {
+        cookie: jar.header(),
+        origin: appHttp.baseUrl,
+        'content-type': 'application/json'
+      },
+      body: '{"streamed":true}'
+    }
+  );
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });
@@ -109,4 +112,45 @@ test('production Sonarr TLS verification is enabled unless explicitly disabled',
   };
   assert.equal(loadConfig(base).sonarr.tlsInsecure, false);
   assert.equal(loadConfig({ ...base, SONARR_TLS_INSECURE: 'true' }).sonarr.tlsInsecure, true);
+});
+
+test('Sonarr terminates a partial downstream response when upstream disconnects', async t => {
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.write('partial');
+    setTimeout(() => res.destroy(), 25);
+  });
+  const upstreamHttp = await listen(upstream);
+  const databaseFixture = createTestDatabase();
+  const config = loadConfig({
+    NODE_ENV: 'test', DATA_DIR: databaseFixture.dataDir,
+    ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'secret',
+    SONARR_HOST: upstreamHttp.baseUrl, SONARR_API_KEY: 'sonarr-secret'
+  });
+  const appHttp = await listen(createApp({
+    config,
+    database: databaseFixture.database,
+    logger: { log() {}, warn() {}, error() {} }
+  }));
+  t.after(async () => {
+    await new Promise(resolve => appHttp.server.close(resolve));
+    await new Promise(resolve => upstreamHttp.server.close(resolve));
+    databaseFixture.close();
+  });
+  const jar = new CookieJar();
+  await login(appHttp, 'admin', 'secret', jar);
+  const signal = AbortSignal.timeout(1000);
+
+  const response = await fetch(`${appHttp.baseUrl}/sonarr/partial`, {
+    headers: { cookie: jar.header() },
+    signal
+  });
+  assert.equal(response.status, 200);
+  const outcome = await response.text().then(
+    value => ({ value }),
+    error => ({ error })
+  );
+
+  assert.ok(outcome.error, `unexpected completed body: ${outcome.value}`);
+  assert.equal(signal.aborted, false, 'response ended only because the one-second test bound aborted it');
 });
