@@ -33,7 +33,7 @@ function pattern(overrides = {}) {
   };
 }
 
-async function createRssFixture(t, { xml = RSS_XML, env = {}, logger } = {}) {
+async function createRssFixture(t, { xml = RSS_XML, env = {}, logger, failIncrement = false } = {}) {
   const fixture = createTestDatabase();
   const config = loadConfig({
     NODE_ENV: 'test', DATA_DIR: fixture.dataDir,
@@ -47,6 +47,7 @@ async function createRssFixture(t, { xml = RSS_XML, env = {}, logger } = {}) {
     },
     incrementMatchCounts(counts) {
       calls.push(new Map(counts));
+      if (failIncrement) fixture.database.close();
       fixture.database.incrementMatchCounts(counts);
     }
   };
@@ -89,6 +90,35 @@ test('does not transform or count a nonnumeric episode capture', () => {
   assert.equal(transformTitle('SPECIAL', compiled), null);
 });
 
+test('rejects an episode capture that is only partially numeric', () => {
+  const [compiled] = compilePatterns([
+    { id: 1, ...pattern({ pattern: '(?<episode>\\d+[a-z]+)' }) }
+  ]);
+  assert.equal(transformTitle('12abc', compiled), null);
+});
+
+test('requires the complete episode capture to be decimal integer text', () => {
+  for (const [source, title] of [
+    ['(?<episode>\\s+)', '   '],
+    ['(?<episode>\\d+e\\d+)', '1e2']
+  ]) {
+    const [compiled] = compilePatterns([{ id: 1, ...pattern({ pattern: source }) }]);
+    assert.equal(transformTitle(title, compiled), null, title);
+  }
+});
+
+test('skips stored Patterns with invalid offsets before transformation', () => {
+  const invalidPatterns = [
+    { id: 1, ...pattern({ offset: '1' }) },
+    { id: 2, ...pattern({ offset: Infinity }) }
+  ];
+  assert.deepEqual(compilePatterns(invalidPatterns), []);
+  assert.equal(transformTitle('[A] Alpha 01', {
+    expression: /^(?:\[A\] Alpha (?<episode>\d+))$/,
+    pattern: invalidPatterns[0]
+  }), null);
+});
+
 test('RSS keeps exact title bytes and updates all Pattern counts in one aggregate', async t => {
   const fixture = await createRssFixture(t);
   const alpha = fixture.database.createPattern(pattern());
@@ -110,6 +140,39 @@ test('RSS keeps exact title bytes and updates all Pattern counts in one aggregat
   assert.deepEqual([...fixture.calls[0]], [[alpha.id, 1], [beta.id, 1]]);
   assert.equal(fixture.database.getPattern(alpha.id).match_count, 1);
   assert.equal(fixture.database.getPattern(beta.id).match_count, 1);
+});
+
+test('RSS aggregates two matching items for one Pattern as count two', async t => {
+  const fixture = await createRssFixture(t, {
+    xml: RSS_XML.replace('[B] Beta 07', '[A] Alpha 02')
+  });
+  const alpha = fixture.database.createPattern(pattern());
+
+  const response = await fetch(`${fixture.baseUrl}/RSS/Bangumi`);
+
+  assert.equal(response.status, 200);
+  assert.equal(fixture.calls.length, 1);
+  assert.deepEqual([...fixture.calls[0]], [[alpha.id, 2]]);
+  assert.equal(fixture.database.getPattern(alpha.id).match_count, 2);
+});
+
+test('RSS returns fixed 500 when aggregate database accounting fails', async t => {
+  const logs = [];
+  const logger = {
+    log(...parts) { logs.push(parts.join(' ')); },
+    warn(...parts) { logs.push(parts.join(' ')); },
+    error(...parts) { logs.push(parts.join(' ')); }
+  };
+  const fixture = await createRssFixture(t, { logger, failIncrement: true });
+  fixture.database.createPattern(pattern());
+
+  const response = await fetch(`${fixture.baseUrl}/RSS/Bangumi?token=QUERY-SECRET`);
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: 'Internal server error', code: 'REQUEST_FAILED' });
+  assert.equal(logs.some(line => line.includes('QUERY-SECRET') || line.includes('token=')), false);
+  assert.equal(logs.some(line => line.includes('database connection')), false);
+  assert.match(logs.join('\n'), /route=\/RSS status=500 duration_ms=\d+/);
 });
 
 test('oversized upstream RSS returns a fixed 502 without content or query secrets', async t => {
