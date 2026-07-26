@@ -5,7 +5,10 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "nodemon server/index.js"
+    "dev": "nodemon server/index.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "check:syntax": "node --check server/*.js && node --check server/routes/*.js && node --check public/js/*.js && node --check public/sw.js",
+    "check": "npm run check:syntax && npm test"
   },
   "dependencies": {
     "axios": "^1.13.2",

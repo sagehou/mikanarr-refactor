@@ -1,9 +1,7 @@
 const express = require('express');
-const { getPatterns, getPattern, createPattern, updatePattern, deletePattern, db } = require('../database');
-const { verifyToken } = require('./auth');
-const fs = require('fs');
-const path = require('path');
-
+function createPatternsRouter({ database, verifyToken }) {
+const { getPatterns, getPattern, createPattern, updatePattern, deletePattern } = database;
+const db = database.raw;
 const router = express.Router();
 
 // 导出patterns数据 - 不需要认证
@@ -388,4 +386,7 @@ router.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-module.exports = router;
+return router;
+}
+
+module.exports = { createPatternsRouter };

@@ -1,50 +1,31 @@
 const express = require('express');
-const { verifyToken } = require('./auth');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
-const router = express.Router();
-router.use(verifyToken);
-
-const SONARR_API_KEY = process.env.SONARR_API_KEY;
-const SONARR_HOST = process.env.SONARR_HOST;
-
-if (!SONARR_API_KEY || !SONARR_HOST) {
-  console.error('[Sonarr Proxy] Missing configuration');
-  router.use((req, res) => {
-    res.status(503).json({ error: 'Sonarr proxy not configured' });
-  });
-} else {
+function createSonarrRouter({ config, verifyToken, logger = console }) {
+  const router = express.Router();
+  router.use(verifyToken);
+  if (!config.sonarr.apiKey || !config.sonarr.host) {
+    router.use((req, res) => res.status(503).json({ error: 'Sonarr proxy not configured' }));
+    return router;
+  }
   router.use('/', createProxyMiddleware({
-    target: SONARR_HOST,
+    target: config.sonarr.host,
     changeOrigin: true,
     secure: false,
-    pathRewrite(path, req) {
-      // req.url in express router does not include the mount point (/sonarr)
-      // path argument might be the same as req.url
-      
-      // Ensure we construct the target path correctly
-      // We expect input like /api/v3/series (after stripping /sonarr)
-      // And we want to append apikey
-      
+    pathRewrite(proxyPath, req) {
       const searchParams = new URLSearchParams(new URL(req.originalUrl, 'http://localhost').search);
-      searchParams.append('apikey', SONARR_API_KEY);
-      
-      // path here is likely /api/v3/series
-      // remove any query string from path first as we will append it back
-      const pathBase = path.split('?')[0];
-      
-      return `${pathBase}?${searchParams.toString()}`;
+      searchParams.append('apikey', config.sonarr.apiKey);
+      return `${proxyPath.split('?')[0]}?${searchParams.toString()}`;
     },
-    onProxyReq: (proxyReq, req, res) => {
-      console.log(`[Sonarr Proxy] ${req.method} ${req.originalUrl} -> ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`);
+    onProxyReq(proxyReq, req) {
+      logger.log(`[Sonarr Proxy] ${req.method} ${req.originalUrl} -> ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`);
     },
-    onError: (err, req, res) => {
-      console.error('[Sonarr Proxy] Error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message || 'Proxy error' });
-      }
+    onError(error, req, res) {
+      logger.error('[Sonarr Proxy] Error:', error.message);
+      if (!res.headersSent) res.status(500).json({ error: error.message || 'Proxy error' });
     }
   }));
+  return router;
 }
 
-module.exports = router;
+module.exports = { createSonarrRouter };
