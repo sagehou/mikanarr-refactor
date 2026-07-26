@@ -55,7 +55,7 @@ function loadConfig(env = process.env) {
   const requiredGroup = env.OIDC_REQUIRED_GROUP?.trim() || '';
   const nodeEnv = env.NODE_ENV || 'production';
 
-  if (!env.OIDC_ISSUER && (env.OIDC_AUTH_URL || env.OIDC_TOKEN_URL)) {
+  if (env.OIDC_AUTH_URL || env.OIDC_TOKEN_URL) {
     throw new ConfigError('OIDC_LEGACY_CONFIG', 'Replace OIDC_AUTH_URL/OIDC_TOKEN_URL with OIDC_ISSUER');
   }
   if (oidcAny && !oidcComplete) {

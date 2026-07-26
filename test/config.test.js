@@ -40,3 +40,19 @@ test('rejects incomplete and legacy OIDC configuration', () => {
     error => error instanceof ConfigError && error.code === 'OIDC_LEGACY_CONFIG'
   );
 });
+
+test('rejects legacy OIDC URLs alongside a complete issuer configuration', () => {
+  const modern = {
+    NODE_ENV: 'test', DATA_DIR: '/tmp/mikanarr-test',
+    OIDC_ISSUER: 'http://localhost:8080/', OIDC_CLIENT_ID: 'client',
+    OIDC_CLIENT_SECRET: 'secret', OIDC_REDIRECT_URI: 'http://localhost:12306/auth/oidc/callback',
+    OIDC_ALLOWED_SUBJECTS: 'alice'
+  };
+  for (const legacy of ['OIDC_AUTH_URL', 'OIDC_TOKEN_URL']) {
+    assert.throws(
+      () => loadConfig({ ...modern, [legacy]: 'http://localhost/legacy' }),
+      error => error instanceof ConfigError && error.code === 'OIDC_LEGACY_CONFIG',
+      legacy
+    );
+  }
+});

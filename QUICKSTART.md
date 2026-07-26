@@ -7,13 +7,14 @@ From the repository root, create the only configuration file required by Compose
 ```bash
 cp .env.example .env
 # Edit .env: set SONARR_API_KEY, SONARR_HOST, ADMIN_USERNAME, and ADMIN_PASSWORD.
+# For the direct loopback HTTP path below, also set COOKIE_SECURE=false.
 docker compose pull
 docker compose up -d --wait
 ```
 
-Open `http://127.0.0.1:12306` from the host. Compose uses the GHCR image and a named `mikanarr-data` volume at `/app/data`; it is not a bind-mounted `./data` directory.
+With `COOKIE_SECURE=false`, open `http://127.0.0.1:12306` from the host. This is the local loopback HTTP path only. For a normal deployment behind a TLS reverse proxy, leave `COOKIE_SECURE=true` and open the proxy's `https://` URL instead. Compose uses the GHCR image and a named `mikanarr-data` volume at `/app/data`; it is not a bind-mounted `./data` directory.
 
-The default loopback binding is intentional. For internet-facing use, keep it loopback-only and place a TLS reverse proxy in front of it. Only for a deliberately firewall-protected LAN deployment, put `BIND_ADDRESS=0.0.0.0` in the root `.env` and rerun `docker compose up -d --wait`. Leave `COOKIE_SECURE=true` with a TLS proxy; use `COOKIE_SECURE=false` only during local HTTP development/testing.
+The default loopback binding is intentional. For internet-facing use, keep it loopback-only and place a TLS reverse proxy in front of it. Only for a deliberately firewall-protected LAN deployment, put `BIND_ADDRESS=0.0.0.0` in the root `.env` and rerun `docker compose up -d --wait`. A LAN login still needs HTTPS when `COOKIE_SECURE=true`; use `COOKIE_SECURE=false` only for an intentionally plain-HTTP local/test path.
 
 ## Login choices
 

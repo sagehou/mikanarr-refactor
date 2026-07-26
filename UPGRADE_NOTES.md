@@ -14,22 +14,35 @@ The application owns a named `mikanarr-data` volume mounted at `/app/data`. It i
 
 ## Migrate a legacy `./data` bind mount
 
-Do this before starting the new deployment in production. It creates the Compose volume without starting the application, takes a host-side backup, refuses to copy into a non-empty destination, and copies only the SQLite database and generated JWT keys. It restores `node:node` ownership.
+Do this before starting the new deployment in production. The sequence first requires the legacy database, stops and removes the old Compose service without deleting volumes, and only then archives and copies the quiesced SQLite files. It creates the new Compose volume without starting the application, refuses to copy into a non-empty destination, and restores `node:node` ownership.
 
 ```bash
-# From the repository root, with the old ./data directory still present.
-test -d ./data
-mkdir -p backups
-tar -C ./data -czf "backups/legacy-data-before-volume-$(date +%F).tar.gz" .
+(
+set -eu
 
-# Ensure root .env is ready, but do not start the new service yet.
-cp .env.example .env  # skip this line if root .env already exists and is correct
+# From the repository root, with the old ./data bind directory still present.
+test -f ./data/database.sqlite
+
+# Quiesce the legacy SQLite writer. Do not add -v: existing volumes must survive.
+docker compose down
+test -f ./data/database.sqlite
+
+# Back up the stopped legacy data before creating or copying into the new volume.
+mkdir -p backups
+backup="backups/legacy-data-before-volume-$(date +%Y%m%d-%H%M%S).tar.gz"
+test ! -e "$backup"
+tar -C ./data -czf "$backup" .
+
+# Ensure root .env is ready. None of the following commands starts the application writer.
+test -f .env || cp .env.example .env
+docker compose pull
 docker compose create mikanarr
-docker compose run --rm --no-deps --user root -v "$PWD/data:/legacy:ro" --entrypoint sh mikanarr -c 'set -eu; test -d /legacy; test -z "$(find /app/data -mindepth 1 -maxdepth 1 -print -quit)"; for name in database.sqlite database.sqlite-wal database.sqlite-shm jwt.key jwt.key.pub; do if [ -e "/legacy/$name" ]; then cp -p "/legacy/$name" "/app/data/$name"; fi; done; chown -R node:node /app/data'
+docker compose run --rm --no-deps --user root -v "$PWD/data:/legacy:ro" --entrypoint sh mikanarr -c 'set -eu; test -f /legacy/database.sqlite; test -z "$(find /app/data -mindepth 1 -maxdepth 1 -print -quit)"; for name in database.sqlite database.sqlite-wal database.sqlite-shm jwt.key jwt.key.pub; do if [ -e "/legacy/$name" ]; then cp -p "/legacy/$name" "/app/data/$name"; fi; done; chown -R node:node /app/data'
 docker compose up -d --wait
+)
 ```
 
-Keep the archive until the upgraded instance has been verified. Do not rerun the copy command against an existing populated volume: its empty-destination check is intentional. If a migration must be retried, stop the service, make a fresh named-volume backup as described in [README.md](README.md), and explicitly restore or remove the destination only after confirming the backups.
+Do not restart the legacy service between `docker compose down` and the copy step; that would make the archive and copied SQLite state diverge. Keep the archive until the upgraded instance has been verified. Do not rerun the copy command against an existing populated volume: its empty-destination check is intentional. If a migration must be retried, stop the service and make a fresh named-volume backup as described in [README.md](README.md) before deciding how to restore it. None of the migration commands deletes the source directory or a volume.
 
 ## Authentication migration
 
