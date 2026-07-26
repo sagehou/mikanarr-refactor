@@ -11,7 +11,7 @@ test('serves static HTML and database health without listening on import', async
   assert.deepEqual(await health.json(), { status: 'ok', database: 'ok' });
 });
 
-test('OIDC-only configuration rejects empty local credentials', async t => {
+test('OIDC-only configuration hides local login', async t => {
   const fixture = await createAppFixture({ oidcOnly: true });
   t.after(fixture.close);
   const response = await fetch(`${fixture.baseUrl}/auth/login`, {
@@ -19,5 +19,5 @@ test('OIDC-only configuration rejects empty local credentials', async t => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: '', password: '' })
   });
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 404);
 });

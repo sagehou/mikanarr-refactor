@@ -13,13 +13,14 @@ function createTestDatabase() {
   return { database, dataDir, close() { database.close(); rmSync(dataDir, { recursive: true, force: true }); } };
 }
 
-async function createAppFixture({ oidcOnly = false } = {}) {
+async function createAppFixture({ oidcOnly = false, env: overrides = {}, oidcProvider, clock, logger = { log() {}, warn() {}, error() {} } } = {}) {
   const fixture = createTestDatabase();
-  const env = oidcOnly
+  const defaults = oidcOnly
     ? { NODE_ENV: 'test', DATA_DIR: fixture.dataDir, OIDC_ISSUER: 'http://localhost:8080', OIDC_CLIENT_ID: 'client', OIDC_CLIENT_SECRET: 'secret', OIDC_REDIRECT_URI: 'http://localhost:12306/auth/oidc/callback', OIDC_ALLOWED_SUBJECTS: 'subject' }
     : { NODE_ENV: 'test', DATA_DIR: fixture.dataDir, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'secret' };
+  const env = { ...defaults, ...overrides };
   const config = loadConfig(env);
-  const app = createApp({ config, database: fixture.database, logger: { log() {}, warn() {}, error() {} } });
+  const app = createApp({ config, database: fixture.database, oidcProvider, clock, logger });
   const http = await listen(app);
   return { ...fixture, ...http, app, config, async close() { await new Promise(resolve => http.server.close(resolve)); fixture.close(); } };
 }
@@ -29,10 +30,11 @@ const validPattern = Object.freeze({ remote: '', pattern: '.*', series: 'Example
 class CookieJar {
   constructor() { this.cookies = new Map(); }
   set(response) {
-    const cookie = response.headers.get('set-cookie');
-    if (!cookie) return;
-    const [name, value] = cookie.split(';')[0].split('=');
-    this.cookies.set(name, value);
+    for (const cookie of response.headers.getSetCookie()) {
+      const [name, value] = cookie.split(';')[0].split('=');
+      if (value) this.cookies.set(name, value);
+      else this.cookies.delete(name);
+    }
   }
   header() { return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; '); }
 }

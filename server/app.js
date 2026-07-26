@@ -1,7 +1,7 @@
 const express = require('express');
-const cors = require('cors');
 const path = require('node:path');
 const axios = require('axios');
+const { createSessionManager, createSameOriginGuard } = require('./session');
 const { createAuthRouter } = require('./routes/auth');
 const { createPatternsRouter } = require('./routes/patterns');
 const { createProxyRouter } = require('./routes/proxy');
@@ -10,16 +10,17 @@ const { createRssRouter } = require('./routes/rss');
 const { createTmdbRouter } = require('./routes/tmdb');
 const { createImageProxyRouter } = require('./routes/imageProxy');
 
-function createApp({ config, database, oidcProvider, httpClient = axios, logger = console }) {
+function createApp({ config, database, oidcProvider, httpClient = axios, logger = console, clock = Date.now }) {
   const app = express();
-  const authRouter = createAuthRouter({ config, oidcProvider, httpClient, logger });
+  const sessionManager = createSessionManager({ config, clock });
+  const authRouter = createAuthRouter({ config, oidcProvider, httpClient, logger, clock, sessionManager });
   const dependencies = { config, database, oidcProvider, httpClient, logger, verifyToken: authRouter.verifyToken };
 
-  app.use(cors());
   app.use((req, res, next) => {
     res.setHeader('Permissions-Policy', '');
     next();
   });
+  app.use(createSameOriginGuard(config));
   app.use('/sonarr', createSonarrRouter(dependencies));
   app.use('/proxy', createProxyRouter(dependencies));
   app.use('/api/image-proxy', createImageProxyRouter(dependencies));
@@ -44,7 +45,11 @@ function createApp({ config, database, oidcProvider, httpClient = axios, logger 
   });
   app.use((error, req, res, next) => {
     logger.error('[Server Error]', error);
-    if (!res.headersSent) res.status(error.status || 500).json({ error: error.message || 'Internal server error' });
+    if (res.headersSent) return;
+    if (error.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Invalid JSON', code: 'INVALID_JSON' });
+    }
+    res.status(error.status || 500).json({ error: error.message || 'Internal server error', code: error.code || 'REQUEST_FAILED' });
   });
   return app;
 }
