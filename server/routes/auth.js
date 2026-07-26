@@ -38,7 +38,7 @@ function createAuthRouter({ config, logger = console, httpClient = axios }) {
 
   router.post('/login', (req, res) => {
     const { username, password } = req.body;
-    if (username === config.auth.local.username && password === config.auth.local.password) {
+    if (config.auth.local.enabled && username === config.auth.local.username && password === config.auth.local.password) {
       res.json({ token: jwt.sign({ username }, privateKey, { algorithm: 'RS512', expiresIn: '24h' }) });
     } else {
       res.status(401).send('Username or password incorrect');

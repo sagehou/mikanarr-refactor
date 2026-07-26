@@ -40,3 +40,28 @@
 
 - The old bearer/query-token and legacy OIDC route behavior remains intentionally intact for Task 2, which owns fail-closed cookie sessions and standards-based OIDC.
 - Pattern/proxy hardening and frontend/deployment work remain intentionally deferred to their assigned tasks.
+
+---
+
+## Fix round 1 — OIDC-only local-login bypass
+
+### Changed files
+
+- `test/app.test.js`: added a real-HTTP OIDC-only fixture regression that posts empty local credentials and requires `401`.
+- `server/routes/auth.js`: requires `config.auth.local.enabled` before comparing submitted local credentials.
+
+### RED evidence
+
+- `node --test test/app.test.js` exited 1: `OIDC-only configuration rejects empty local credentials` asserted `401`, but the response was `200` (`200 !== 401`). This reproduced the reported JWT-issuing bypass without mocks.
+
+### GREEN evidence
+
+- `node --test test/app.test.js` — 2 passed, 0 failed.
+- `npm run check` — syntax checks passed; 9 tests passed, 0 failed.
+- `git diff --check` exited 0.
+
+### Self-review
+
+- The gate uses the configuration's pre-existing non-empty credential invariant, so OIDC-only empty strings no longer match while configured local credentials retain their existing comparison behavior.
+- The change neither introduces Task 2 cookie/OIDC behavior nor alters the existing login response contract.
+- No separate reviewer Minor was supplied with the blocking finding; no unrelated change was inferred.
