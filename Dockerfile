@@ -1,23 +1,22 @@
-FROM node:22-alpine
+FROM node:22.23.1-alpine3.24
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy application code
 COPY public ./public
 COPY server ./server
 
-# Create data directory
-RUN mkdir -p data
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
+ENV NODE_ENV=production
+ENV PORT=12306
 
 EXPOSE 12306
 
-ENV PORT=12306
-ENV NODE_ENV=production
+USER node
 
-CMD ["npm", "start"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:12306/api/health || exit 1
+
+CMD ["node", "server/index.js"]
