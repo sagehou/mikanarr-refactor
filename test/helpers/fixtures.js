@@ -25,7 +25,7 @@ async function createAppFixture({ oidcOnly = false, env: overrides = {}, oidcPro
   return { ...fixture, ...http, app, config, async close() { await new Promise(resolve => http.server.close(resolve)); fixture.close(); } };
 }
 
-const validPattern = Object.freeze({ remote: '', pattern: '.*', series: 'Example', season: '1', language: 'Chinese', quality: 'WEBDL 1080p', offset: 0, releasegroup: '' });
+const validPattern = Object.freeze({ remote: '', pattern: '(?<episode>\\d+)', series: 'Example', season: '1', language: 'Chinese', quality: 'WEBDL 1080p', offset: 0, releasegroup: '' });
 
 class CookieJar {
   constructor() { this.cookies = new Map(); }

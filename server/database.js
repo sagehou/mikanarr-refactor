@@ -45,15 +45,27 @@ function createDatabase({ dataDir }) {
       language = @language, quality = @quality, offset = @offset, releasegroup = @releasegroup WHERE id = @id
     `),
     deletePattern: raw.prepare('DELETE FROM patterns WHERE id = ?'),
+    deletePatterns: raw.prepare('DELETE FROM patterns'),
+    resetPatternSequence: raw.prepare("DELETE FROM sqlite_sequence WHERE name = 'patterns'"),
+    countPatterns: raw.prepare('SELECT COUNT(*) AS count FROM patterns'),
     getTmdbCache: raw.prepare('SELECT * FROM tmdb_cache'),
     upsertTmdbCache: raw.prepare(`
       INSERT INTO tmdb_cache (tmdb_id, title_en, title_zh, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(tmdb_id) DO UPDATE SET title_en = excluded.title_en, title_zh = excluded.title_zh,
       updated_at = CURRENT_TIMESTAMP
     `),
-    incrementMatchCount: raw.prepare('UPDATE patterns SET match_count = match_count + 1, last_matched_at = CURRENT_TIMESTAMP WHERE id = ?'),
+    incrementMatchCount: raw.prepare('UPDATE patterns SET match_count = match_count + ?, last_matched_at = CURRENT_TIMESTAMP WHERE id = ?'),
     healthCheck: raw.prepare('SELECT 1 AS healthy')
   };
+  const overwritePatterns = raw.transaction(patterns => {
+    statements.deletePatterns.run();
+    statements.resetPatternSequence.run();
+    for (const pattern of patterns) statements.createPattern.run(pattern);
+    return statements.countPatterns.get().count;
+  });
+  const incrementMatchCounts = raw.transaction(counts => {
+    for (const [id, count] of counts) statements.incrementMatchCount.run(count, id);
+  });
 
   return {
     raw,
@@ -64,17 +76,19 @@ function createDatabase({ dataDir }) {
       return statements.getPattern.get(result.lastInsertRowid);
     },
     updatePattern(id, pattern) {
-      statements.updatePattern.run({ id, ...pattern });
+      statements.updatePattern.run({ ...pattern, id });
       return statements.getPattern.get(id);
     },
-    deletePattern: id => statements.deletePattern.run(id),
+    deletePattern: id => statements.deletePattern.run(id).changes,
+    overwritePatterns,
     getTmdbCache: () => statements.getTmdbCache.all(),
     getTmdbCacheByIds(ids) {
       if (!ids?.length) return [];
       return raw.prepare(`SELECT * FROM tmdb_cache WHERE tmdb_id IN (${ids.map(() => '?').join(',')})`).all(...ids);
     },
     upsertTmdbCache: (id, titleEn, titleZh) => statements.upsertTmdbCache.run(id, titleEn, titleZh),
-    incrementMatchCount: id => statements.incrementMatchCount.run(id),
+    incrementMatchCount: id => statements.incrementMatchCount.run(1, id),
+    incrementMatchCounts,
     healthCheck() {
       statements.healthCheck.get();
       return 'ok';
