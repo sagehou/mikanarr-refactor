@@ -4,12 +4,18 @@ const { createAppFixture, CookieJar } = require('./helpers/fixtures');
 
 const temporaryNames = ['oidc_state', 'oidc_nonce', 'oidc_verifier'];
 
-function fakeProvider(claims = { sub: 'subject' }) {
+function fakeProvider(claims = { sub: 'subject' }, capture) {
   return {
     async authorizationRequest() {
       return { url: new URL('http://identity.example/authorize'), state: 'state-value', nonce: 'nonce-value', verifier: 'verifier-value' };
     },
-    async exchange() { return claims; }
+    async exchange(currentUrl, checks) {
+      if (capture) {
+        capture.currentUrl = currentUrl;
+        capture.checks = checks;
+      }
+      return claims;
+    }
   };
 }
 
@@ -83,6 +89,21 @@ test('callback rejects mismatched state before issuing a session', async t => {
   assertTemporaryCookiesCleared(response);
 });
 
+test('callback forwards its URL and every temporary check to the provider', async t => {
+  const capture = {};
+  const fixture = await createAppFixture({ oidcOnly: true, oidcProvider: fakeProvider({ sub: 'subject' }, capture) });
+  t.after(fixture.close);
+  const { jar } = await startOidc(fixture);
+  const response = await fetch(`${fixture.baseUrl}/auth/oidc/callback?code=code&state=state-value`, {
+    headers: { cookie: jar.header() }, redirect: 'manual'
+  });
+  assert.equal(response.status, 302);
+  assert.equal(String(capture.currentUrl), 'http://localhost:12306/auth/oidc/callback?code=code&state=state-value');
+  assert.deepEqual(capture.checks, {
+    state: 'state-value', nonce: 'nonce-value', verifier: 'verifier-value'
+  });
+});
+
 test('unauthorized OIDC claims return 403 without a session', async t => {
   const fixture = await createAppFixture({ oidcOnly: true, oidcProvider: fakeProvider({ sub: 'mallory', groups: ['guests'] }) });
   t.after(fixture.close);
@@ -142,4 +163,42 @@ test('OIDC authorization allows only configured subjects or groups', () => {
   assert.equal(isOidcAuthorized({ sub: 'bob', roles: 'admins' }, config), false);
   assert.equal(isOidcAuthorized({ sub: 'bob', roles: ['guests'] }, config), false);
   assert.equal(isOidcAuthorized({}, config), false);
+});
+
+test('OIDC wrapper passes every callback check to the authorization code grant', async () => {
+  const capture = {};
+  const discovered = { marker: 'configuration' };
+  const client = {
+    async discovery(issuer, clientId, clientSecret) {
+      capture.discovery = { issuer: String(issuer), clientId, clientSecret };
+      return discovered;
+    },
+    async authorizationCodeGrant(configuration, currentUrl, options) {
+      capture.grant = { configuration, currentUrl: String(currentUrl), options };
+      return { claims() { return { sub: 'subject' }; } };
+    }
+  };
+  const { createOidcProvider } = require('../server/oidc');
+  const provider = await createOidcProvider({
+    issuer: 'https://identity.example', clientId: 'client-id', clientSecret: 'client-secret',
+    redirectUri: 'https://app.example/auth/oidc/callback'
+  }, Promise.resolve(client));
+  const claims = await provider.exchange(
+    new URL('https://app.example/auth/oidc/callback?code=code&state=state-value'),
+    { state: 'state-value', nonce: 'nonce-value', verifier: 'verifier-value' }
+  );
+  assert.deepEqual(claims, { sub: 'subject' });
+  assert.deepEqual(capture.discovery, {
+    issuer: 'https://identity.example/', clientId: 'client-id', clientSecret: 'client-secret'
+  });
+  assert.deepEqual(capture.grant, {
+    configuration: discovered,
+    currentUrl: 'https://app.example/auth/oidc/callback?code=code&state=state-value',
+    options: {
+      pkceCodeVerifier: 'verifier-value',
+      expectedState: 'state-value',
+      expectedNonce: 'nonce-value',
+      idTokenExpected: true
+    }
+  });
 });

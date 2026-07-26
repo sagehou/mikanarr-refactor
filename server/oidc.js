@@ -1,7 +1,7 @@
 const oidcModule = import('openid-client');
 
-async function createOidcProvider(config) {
-  const client = await oidcModule;
+async function createOidcProvider(config, clientPromise = oidcModule) {
+  const client = await clientPromise;
   const discovered = await client.discovery(
     new URL(config.issuer), config.clientId, config.clientSecret
   );

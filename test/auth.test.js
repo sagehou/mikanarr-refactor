@@ -127,6 +127,19 @@ test('mutation guard rejects a same-host Origin with a different scheme', async 
   assert.equal(response.headers.has('set-cookie'), false);
 });
 
+test('mutation guard rejects an Origin with a different host', async t => {
+  const fixture = await createAppFixture();
+  t.after(fixture.close);
+  const response = await fetch(`${fixture.baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://attacker.example' },
+    body: JSON.stringify({ username: 'admin', password: 'secret' })
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'Cross-site request rejected', code: 'CROSS_SITE_REQUEST' });
+  assert.equal(response.headers.has('set-cookie'), false);
+});
+
 test('local login rate limits the sixth failure per IP for 15 minutes', async t => {
   let now = 1_000;
   const fixture = await createAppFixture({ clock: () => now });
