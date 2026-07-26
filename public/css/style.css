@@ -202,6 +202,11 @@ body {
   border-radius: 50%; 
 }
 
+:focus-visible {
+  outline: 3px solid #0d6efd;
+  outline-offset: 2px;
+}
+
 
 /* Badge styling tweaks */
 .badge {
@@ -1157,4 +1162,3 @@ select:focus {
   color: #8a5a44;
   text-decoration: underline;
 }
-

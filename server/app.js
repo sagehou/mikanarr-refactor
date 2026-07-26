@@ -17,7 +17,40 @@ function createApp({ config, database, oidcProvider, httpClient = axios, logger 
   const dependencies = { config, database, oidcProvider, httpClient, logger, verifyToken: authRouter.verifyToken };
 
   app.use((req, res, next) => {
-    res.setHeader('Permissions-Policy', '');
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'self'",
+      "script-src 'self' https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+      "connect-src 'self'",
+      "img-src 'self' data:",
+      "font-src 'self' https://cdn.jsdelivr.net data:",
+      "form-action 'self'"
+    ].join('; '));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', [
+      'accelerometer=()',
+      'autoplay=()',
+      'camera=()',
+      'display-capture=()',
+      'encrypted-media=()',
+      'fullscreen=()',
+      'geolocation=()',
+      'gyroscope=()',
+      'magnetometer=()',
+      'microphone=()',
+      'midi=()',
+      'payment=()',
+      'picture-in-picture=()',
+      'publickey-credentials-get=()',
+      'screen-wake-lock=()',
+      'usb=()',
+      'web-share=()',
+      'xr-spatial-tracking=()'
+    ].join(', '));
     next();
   });
   app.use(createSameOriginGuard(config));

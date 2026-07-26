@@ -1,113 +1,19 @@
-// ===== Toast Notification System =====
-class Toast {
-  static container = null;
-
-  static init() {
-    if (!this.container) {
-      this.container = document.createElement('div');
-      this.container.className = 'toast-container';
-      document.body.appendChild(this.container);
-    }
-  }
-
-  static show(message, type = 'info', duration = 3000) {
-    this.init();
-
-    const icons = {
-      success: 'bi-check-circle-fill',
-      error: 'bi-x-circle-fill',
-      warning: 'bi-exclamation-triangle-fill',
-      info: 'bi-info-circle-fill'
-    };
-
-    const toast = document.createElement('div');
-    toast.className = `toast-item toast-${type}`;
-    toast.innerHTML = `
-      <i class="bi ${icons[type]} toast-icon"></i>
-      <div class="toast-content">${message}</div>
-      <button class="toast-close"><i class="bi bi-x"></i></button>
-    `;
-
-    this.container.appendChild(toast);
-
-    const close = () => {
-      toast.classList.add('toast-leaving');
-      setTimeout(() => toast.remove(), 300);
-    };
-
-    toast.querySelector('.toast-close').addEventListener('click', close);
-
-    if (duration > 0) {
-      setTimeout(close, duration);
-    }
-
-    return toast;
-  }
-
-  static success(message, duration) { return this.show(message, 'success', duration); }
-  static error(message, duration) { return this.show(message, 'error', duration); }
-  static warning(message, duration) { return this.show(message, 'warning', duration); }
-  static info(message, duration) { return this.show(message, 'info', duration); }
-}
-
-// ===== Confirm Dialog =====
-class ConfirmDialog {
-  static show({ title, message, confirmText = '确认', cancelText = '取消', type = 'danger' }) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'confirm-overlay';
-
-      const icons = {
-        danger: 'bi-exclamation-triangle-fill',
-        warning: 'bi-question-circle-fill'
-      };
-
-      overlay.innerHTML = `
-        <div class="confirm-dialog">
-          <div class="confirm-dialog-icon ${type}">
-            <i class="bi ${icons[type]}"></i>
-          </div>
-          <div class="confirm-dialog-title">${title}</div>
-          <div class="confirm-dialog-message">${message}</div>
-          <div class="confirm-dialog-buttons">
-            <button class="btn btn-secondary" id="confirm-cancel">${cancelText}</button>
-            <button class="btn btn-${type === 'danger' ? 'danger' : 'warning'}" id="confirm-ok">${confirmText}</button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(overlay);
-
-      const cleanup = (result) => {
-        overlay.remove();
-        resolve(result);
-      };
-
-      overlay.querySelector('#confirm-ok').addEventListener('click', () => cleanup(true));
-      overlay.querySelector('#confirm-cancel').addEventListener('click', () => cleanup(false));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) cleanup(false);
-      });
-
-      // Handle Escape key
-      const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-          document.removeEventListener('keydown', handleEscape);
-          cleanup(false);
-        }
-      };
-      document.addEventListener('keydown', handleEscape);
-    });
-  }
-}
+const { Toast, ConfirmDialog } = typeof module === 'object' && module.exports
+  ? require('./ui')
+  : window.MikanarrUi;
+const MikanarrApi = typeof module === 'object' && module.exports
+  ? require('./api')
+  : window.MikanarrApi;
 
 class MikanarrApp {
-  constructor() {
-    this.token = localStorage.getItem('token');
-    window.app = this; // Expose app instance for onclick handlers
+  constructor({ client } = {}) {
+    this.client = client || MikanarrApi.createClient({
+      onUnauthorized: () => this.handleAuthExpired()
+    });
     this.currentPatternId = null;
     this.seriesList = [];
     this.rssItems = [];
+    this.tmdbDetails = new Map();
     this.debounceTimer = null;
     
     this.init();
@@ -115,30 +21,31 @@ class MikanarrApp {
 
   init() {
     this.initTheme();
-    this.checkOidcConfig();
-    this.checkAuth();
     this.setupEventListeners();
     this.setupKeyboardShortcuts();
+    this.start();
   }
 
-  async checkOidcConfig() {
-    // If already logged in, skip config check
-    if (this.token) return;
+  async start() {
+    const authenticated = await this.checkAuth();
+    if (!authenticated) await this.checkOidcConfig();
+  }
 
+  async checkOidcConfig({ allowAutoLogin = true } = {}) {
     try {
-      const response = await fetch('/auth/config');
+      const response = await this.apiRequest('/auth/config', { skipUnauthorized: true });
       if (response.ok) {
         const config = await response.json();
-        console.log('[OIDC] Config:', config);
+        this.oidcAutoLogin = Boolean(config.oidcAutoLogin);
         if (config.oidcEnabled) {
-          if (config.oidcAutoLogin) {
+          const container = document.getElementById('oidc-login-container');
+          if (container) container.classList.remove('d-none');
+          if (config.oidcAutoLogin && allowAutoLogin) {
             console.log('[OIDC] Auto-login enabled, redirecting...');
             window.location.href = '/auth/oidc/login';
             return;
           }
-          const container = document.getElementById('oidc-login-container');
           if (container) {
-            container.classList.remove('d-none');
             console.log('[OIDC] SSO button enabled');
           } else {
             console.error('[OIDC] Button container not found');
@@ -175,25 +82,31 @@ class MikanarrApp {
   }
 
   async checkAuth() {
-    if (this.token) {
-      document.getElementById('login-container').classList.add('d-none');
-      document.getElementById('main-container').classList.remove('d-none');
-      
-      // Initialize view preference
-      this.initView();
-      
-      // Load config first
-      await this.loadConfig();
-      
-      // Then load data in parallel
-      await Promise.all([
-        this.loadPatterns(),
-        this.loadSeries()
-      ]);
-    } else {
-      document.getElementById('login-container').classList.remove('d-none');
-      document.getElementById('main-container').classList.add('d-none');
+    try {
+      await this.client.session();
+      this.showAuthenticated();
+      await this.loadAuthenticatedData();
+      return true;
+    } catch (_) {
+      this.showLoggedOut();
+      return false;
     }
+  }
+
+  showAuthenticated() {
+    document.getElementById('login-container').classList.add('d-none');
+    document.getElementById('main-container').classList.remove('d-none');
+  }
+
+  showLoggedOut() {
+    document.getElementById('login-container').classList.remove('d-none');
+    document.getElementById('main-container').classList.add('d-none');
+  }
+
+  async loadAuthenticatedData() {
+    this.initView();
+    await this.loadConfig();
+    await Promise.all([this.loadPatterns(), this.loadSeries()]);
   }
 
   async loadConfig() {
@@ -427,100 +340,95 @@ setupEventListeners() {
       
     } catch (error) {
       console.error('[searchSonarrSeries] Error:', error);
-      resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
+      const message = document.createElement('div');
+      message.className = 'text-center p-3 text-danger';
+      message.textContent = `搜索出错: ${error.message}`;
+      resultsDiv.replaceChildren(message);
     }
   }
 
   renderSearchResults() {
     const resultsDiv = document.getElementById('sonarr-search-results');
     const pageSize = 10;
-    const start = 0;
     const end = this.currentSearchPage * pageSize;
-    const results = this.searchResults.slice(start, end);
+    const results = this.searchResults.slice(0, end);
     const hasMore = this.searchResults.length > end;
+    resultsDiv.replaceChildren();
 
     if (!results || results.length === 0) {
-      resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
+      const empty = document.createElement('div');
+      empty.className = 'text-center p-3 text-muted';
+      empty.textContent = '未找到相关剧集';
+      resultsDiv.appendChild(empty);
       return;
     }
 
-    let html = results.map((series, index) => {
-      // Check if already exists
+    results.forEach((series, index) => {
       const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
-      const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
-      
-      // Placeholder ID for lazy loading
-      const imgId = `img-tvdb-${series.tvdbId}`;
-      const tmdbIdSpan = `tmdb-id-${series.tvdbId}`;
-      
-      return `
-        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
-          onclick="app.selectSeriesToAdd(${index})" ${exists ? 'disabled' : ''}>
-          <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
-          <div>
-            <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
-            <small class="text-muted">
-              TVDB: ${series.tvdbId} 
-              <span id="${tmdbIdSpan}">${series.tmdbId ? `| TMDB: ${series.tmdbId}` : ''}</span>
-              | ${series.network || 'Unknown'}
-            </small>
-          </div>
-        </button>
-      `;
-    }).join('');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'list-group-item list-group-item-action d-flex align-items-center';
+      button.disabled = exists;
+      button.addEventListener('click', () => this.selectSeriesToAdd(index));
+
+      const img = document.createElement('img');
+      img.src = '/images/icon.svg';
+      img.alt = '';
+      img.className = 'rounded me-3';
+      img.width = 40;
+      img.height = 60;
+      img.style.objectFit = 'cover';
+
+      const details = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'fw-bold';
+      title.append(document.createTextNode(`${series.title} (${series.year ?? ''})`));
+      if (exists) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-success ms-2';
+        badge.textContent = '已存在';
+        title.append(' ', badge);
+      }
+
+      const metadata = document.createElement('small');
+      metadata.className = 'text-muted';
+      metadata.append(document.createTextNode(`TVDB: ${series.tvdbId ?? ''} `));
+      const tmdbId = document.createElement('span');
+      tmdbId.textContent = series.tmdbId ? `| TMDB: ${series.tmdbId}` : '';
+      metadata.append(tmdbId, document.createTextNode(` | ${series.network || 'Unknown'}`));
+      details.append(title, metadata);
+      button.append(img, details);
+      resultsDiv.appendChild(button);
+
+      if (!series.tvdbId) return;
+      this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`)
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          const tmdbResult = data?.tv_results?.[0];
+          if (tmdbResult?.id) {
+            tmdbId.textContent = `| TMDB: ${tmdbResult.id}`;
+            series.tmdbId = tmdbResult.id;
+          }
+          if (tmdbResult?.poster_path) {
+            img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`);
+          } else {
+            this.loadSonarrImage(series, img);
+          }
+        })
+        .catch(() => this.loadSonarrImage(series, img));
+    });
 
     if (hasMore) {
-      html += `
-        <div class="text-center p-2">
-          <button class="btn btn-sm btn-outline-primary w-100" onclick="app.loadMoreSearchResults()">
-            加载更多
-          </button>
-        </div>
-      `;
+      const moreWrapper = document.createElement('div');
+      moreWrapper.className = 'text-center p-2';
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'btn btn-sm btn-outline-primary w-100';
+      more.textContent = '加载更多';
+      more.addEventListener('click', () => this.loadMoreSearchResults());
+      moreWrapper.appendChild(more);
+      resultsDiv.appendChild(moreWrapper);
     }
-
-    resultsDiv.innerHTML = html;
-
-    // Lazy load TMDB images and info for newly rendered items
-    // We only need to load for the items that haven't been loaded yet, or just re-run for all visible (simpler)
-    // To optimize, we could track loaded IDs, but re-running is okay as long as we check if img src is already set (not placeholder)
-    
-    results.forEach(async series => {
-      if (!series.tvdbId) return;
-      const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
-      if (!img || !img.src.includes('placeholder')) return; // Skip if already loaded
-
-      try {
-        // Use our own TMDB proxy
-        const response = await this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`);
-        if (response.ok) {
-          const data = await response.json();
-          const tmdbResult = data.tv_results?.[0];
-          
-          // Update TMDB ID if found
-          if (tmdbResult?.id) {
-            const tmdbSpan = document.getElementById(`tmdb-id-${series.tvdbId}`);
-            if (tmdbSpan) {
-              tmdbSpan.textContent = `| TMDB: ${tmdbResult.id}`;
-              series.tmdbId = tmdbResult.id;
-            }
-          }
-
-          if (tmdbResult?.poster_path) {
-            if (img) {
-              // Direct TMDB URL
-              img.src = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
-            }
-          } else {
-             this.loadSonarrImage(series);
-          }
-        } else {
-           this.loadSonarrImage(series);
-        }
-      } catch (e) {
-        this.loadSonarrImage(series);
-      }
-    });
   }
 
   loadMoreSearchResults() {
@@ -528,24 +436,44 @@ setupEventListeners() {
     this.renderSearchResults();
   }
 
-  loadSonarrImage(series) {
-    const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
+  imageProxyUrl(url) {
+    if (!url) return '/images/icon.svg';
+    if (url.startsWith('/api/image-proxy?url=')) return url;
+    let parsed;
+    try {
+      parsed = new URL(url, window.location.origin);
+    } catch (_) {
+      return '/images/icon.svg';
+    }
+    if (parsed.origin === window.location.origin) return `${parsed.pathname}${parsed.search}`;
+    return `/api/image-proxy?url=${encodeURIComponent(parsed.href)}`;
+  }
+
+  externalHttpUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+      return parsed.href;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  loadSonarrImage(series, targetImg) {
+    const img = targetImg;
     if (!img) return;
 
-    let posterUrl = series.images.find(i => i.coverType === 'poster')?.remoteUrl || 
-                    series.images.find(i => i.coverType === 'poster')?.url;
+    let posterUrl = series.images?.find(i => i.coverType === 'poster')?.remoteUrl ||
+                    series.images?.find(i => i.coverType === 'poster')?.url;
                     
     if (posterUrl) {
       if (posterUrl.startsWith('/')) {
          const host = (this.sonarrHost || '').replace(/\/$/, '');
          posterUrl = `${host}${posterUrl}`;
-      } else if (posterUrl.startsWith('http')) {
-         // Upgrade HTTP to HTTPS
-         posterUrl = posterUrl.replace(/^http:/, 'https:');
       }
-      img.src = posterUrl;
+      img.src = this.imageProxyUrl(posterUrl);
     } else {
-      img.src = 'https://via.placeholder.com/60x90?text=No+Img';
+      img.src = '/images/icon.svg';
     }
   }
 
@@ -568,31 +496,24 @@ setupEventListeners() {
     const errorDiv = document.getElementById('login-error');
 
     try {
-      const response = await fetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        this.token = data.token;
-        localStorage.setItem('token', this.token);
-        this.checkAuth();
-      } else {
-        errorDiv.textContent = '用户名或密码错误';
-        errorDiv.classList.remove('d-none');
-      }
+      await this.client.login({ username, password });
+      errorDiv.classList.add('d-none');
+      this.showAuthenticated();
+      await this.loadAuthenticatedData();
     } catch (error) {
       errorDiv.textContent = '登录失败: ' + error.message;
       errorDiv.classList.remove('d-none');
     }
   }
 
-  handleLogout() {
-    localStorage.removeItem('token');
-    this.token = null;
-    this.checkAuth();
+  async handleLogout() {
+    try {
+      await this.client.logout();
+      this.showLoggedOut();
+      await this.checkOidcConfig({ allowAutoLogin: false });
+    } catch (error) {
+      Toast.error(`退出失败: ${error.message}`);
+    }
   }
 
   async loadPatterns() {
@@ -764,7 +685,7 @@ setupEventListeners() {
       }
       
       // Show success message
-      Toast.success(`成功添加剧集: ${this.escapeHtml(this.selectedSeries.title)}`);
+      Toast.success(`成功添加剧集: ${this.selectedSeries.title}`);
 
     } catch (error) {
       console.error('[submitAddSeries] Error:', error);
@@ -796,10 +717,25 @@ setupEventListeners() {
     const rootSelect = document.getElementById('sonarr-root-folder');
     const qualitySelect = document.getElementById('sonarr-quality-profile');
 
-    rootSelect.innerHTML = '<option value="">选择路径...</option>' + 
-      this.sonarrOptions.rootFolders.map(f => `<option value="${f.path}">${f.path} (${this.formatBytes(f.freeSpace)} Free)</option>`).join('');
+    rootSelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '选择路径...';
+    rootSelect.appendChild(placeholder);
+    this.sonarrOptions.rootFolders.forEach(folder => {
+      const option = document.createElement('option');
+      option.value = folder.path;
+      option.textContent = `${folder.path} (${this.formatBytes(folder.freeSpace)} Free)`;
+      rootSelect.appendChild(option);
+    });
 
-    qualitySelect.innerHTML = this.sonarrOptions.qualityProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    qualitySelect.replaceChildren();
+    this.sonarrOptions.qualityProfiles.forEach(profile => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      qualitySelect.appendChild(option);
+    });
   }
 
   formatBytes(bytes, decimals = 2) {
@@ -843,8 +779,8 @@ setupEventListeners() {
       
       this.renderSeriesOptions(series);
 
-      // Re-render patterns table to show Chinese names
-      this.loadPatterns();
+      // Reapply status/text filters against the completed Series/TMDB state.
+      this.filterPatterns(document.getElementById('search-input').value);
     } catch (error) {
       console.error('[loadSeries] Failed to load series:', error);
       const errorMsg = error.message || 'Unknown error';
@@ -854,12 +790,8 @@ setupEventListeners() {
       if (seriesSelect) {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'alert alert-warning mt-2';
-        errorDiv.innerHTML = `
-          <i class="bi bi-exclamation-triangle"></i> 
-          加载 Sonarr 系列失败: ${errorMsg}
-          <br>
-          <small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>
-        `;
+        errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>';
+        errorDiv.querySelector('.sonarr-load-error').textContent = `加载 Sonarr 系列失败: ${errorMsg}`;
         
         // Remove existing error if any
         const existingError = seriesSelect.parentElement.querySelector('.alert');
@@ -873,17 +805,17 @@ setupEventListeners() {
   }
 
   async syncTmdbCache(series) {
+    // Prepare series data for sync
+    const seriesData = series
+      .filter(s => s.tmdbId)
+      .map(s => ({ tmdbId: s.tmdbId, titleEn: s.title }));
+
+    if (seriesData.length === 0) {
+      console.log('[syncTmdbCache] No series with tmdbId to sync');
+      return;
+    }
+
     try {
-      // Prepare series data for sync
-      const seriesData = series
-        .filter(s => s.tmdbId)
-        .map(s => ({ tmdbId: s.tmdbId, titleEn: s.title }));
-
-      if (seriesData.length === 0) {
-        console.log('[syncTmdbCache] No series with tmdbId to sync');
-        return;
-      }
-
       console.log('[syncTmdbCache] Syncing', seriesData.length, 'series...');
       
       const response = await this.apiRequest('/tmdb/cache/sync', {
@@ -892,20 +824,21 @@ setupEventListeners() {
         body: JSON.stringify({ series: seriesData })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        this.tmdbCache = data.cache || {};
-        console.log('[syncTmdbCache] Synced', data.synced, 'new series, cache size:', Object.keys(this.tmdbCache).length);
-      } else {
-        console.warn('[syncTmdbCache] Sync failed, trying to load existing cache...');
-        // Fallback: try to load existing cache
-        const cacheResponse = await this.apiRequest('/tmdb/cache');
-        if (cacheResponse.ok) {
-          this.tmdbCache = await cacheResponse.json();
-        }
-      }
+      if (!response.ok) throw new Error('TMDB sync failed');
+      const data = await response.json();
+      this.tmdbCache = data.cache || {};
+      console.log('[syncTmdbCache] Synced', data.synced, 'new series, cache size:', Object.keys(this.tmdbCache).length);
+      return;
     } catch (error) {
-      console.error('[syncTmdbCache] Error:', error.message);
+      if (error.status === 401) return;
+      console.warn('[syncTmdbCache] Sync failed, trying to load existing cache');
+    }
+
+    try {
+      const cacheResponse = await this.apiRequest('/tmdb/cache');
+      this.tmdbCache = await cacheResponse.json();
+    } catch (error) {
+      console.error('[syncTmdbCache] Cache fallback failed:', error.message);
     }
   }
 
@@ -960,12 +893,9 @@ setupEventListeners() {
     // Try TMDB first
     if (series.tmdbId) {
       try {
-        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
-        if (response.ok) {
-          const tmdbData = await response.json();
-          if (tmdbData.poster_path) {
-            posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
-          }
+        const tmdbData = await this.getTmdbDetails(series.tmdbId);
+        if (tmdbData?.poster_path) {
+          posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
         }
       } catch (e) {
         console.warn('[updateSeriesInfoCard] TMDB fetch failed:', e);
@@ -983,7 +913,7 @@ setupEventListeners() {
       }
     }
 
-    posterImg.src = posterUrl || 'https://via.placeholder.com/80x120?text=No+Poster';
+    posterImg.src = posterUrl ? this.imageProxyUrl(posterUrl) : '/images/icon.svg';
 
     // Update title (Chinese name if available)
     const zhName = series.tmdbId ? this.tmdbCache[series.tmdbId] : null;
@@ -1018,8 +948,14 @@ setupEventListeners() {
 
     // Update Sonarr link
     if (series.titleSlug && this.sonarrHost) {
-      document.getElementById('series-sonarr-link').href = `${this.sonarrHost}/series/${series.titleSlug}`;
-      document.getElementById('series-sonarr-link').classList.remove('d-none');
+      const link = document.getElementById('series-sonarr-link');
+      const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+      if (safeLink) {
+        link.href = safeLink;
+        link.classList.remove('d-none');
+      } else {
+        link.classList.add('d-none');
+      }
     } else {
       document.getElementById('series-sonarr-link').classList.add('d-none');
     }
@@ -1098,7 +1034,7 @@ setupEventListeners() {
                   : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
               </div>
               ${!isFiltered ? `
-                <button class="btn btn-primary" onclick="app.showPatternEdit()">
+                <button type="button" class="btn btn-primary btn-empty-new">
                   <i class="bi bi-plus-lg"></i> 新建 Pattern
                 </button>
               ` : ''}
@@ -1106,6 +1042,7 @@ setupEventListeners() {
           </td>
         </tr>
       `;
+      tbody.querySelector('.btn-empty-new')?.addEventListener('click', () => this.showPatternEdit());
       return;
     }
     
@@ -1115,25 +1052,22 @@ setupEventListeners() {
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
       
       // Check match status
-      let matchStatus = '';
       let matchIcon = '';
       let fixBtn = '';
       let addBtn = ''; // Button to add series to Sonarr
       
       if (!series) {
         // Series not found in Sonarr at all
-        matchStatus = 'not-found';
         matchIcon = '<i class="bi bi-exclamation-circle text-danger" title="Sonarr中未找到此系列"></i> ';
         
         // Add "Add Series" button
-        addBtn = `<button class="btn btn-sm btn-outline-success btn-add-series" data-query="${this.escapeHtml(pattern.series)}" title="搜索并添加到 Sonarr">
+        addBtn = `<button type="button" class="btn btn-sm btn-outline-success btn-add-series" title="搜索并添加到 Sonarr" aria-label="搜索并添加到 Sonarr">
             <i class="bi bi-plus-circle"></i>
           </button>`;
       } else if (series.title !== pattern.series) {
         // Found but case doesn't match exactly - might need update
-        matchStatus = 'case-mismatch';
-        matchIcon = `<i class="bi bi-exclamation-triangle text-warning" title="名称不完全匹配，Sonarr中为: ${this.escapeHtml(series.title)}"></i> `;
-        fixBtn = `<button class="btn btn-sm btn-outline-warning btn-fix" data-id="${pattern.id}" data-correct-name="${this.escapeHtml(series.title)}" title="修复为: ${this.escapeHtml(series.title)}">
+        matchIcon = '<i class="bi bi-exclamation-triangle text-warning pattern-match-warning"></i> ';
+        fixBtn = `<button type="button" class="btn btn-sm btn-outline-warning btn-fix" title="修复系列名" aria-label="修复系列名">
             <i class="bi bi-wrench"></i>
           </button>`;
       }
@@ -1142,36 +1076,26 @@ setupEventListeners() {
       
       // Sonarr link button
       const sonarrBtn = series?.titleSlug && this.sonarrHost 
-        ? `<a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+        ? `<a target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info btn-sonarr-link" title="在Sonarr中打开" aria-label="在Sonarr中打开">
             <i class="bi bi-box-arrow-up-right"></i>
           </a>`
         : '';
       
       // Copy proxy URL button (only if remote URL exists)
       const copyUrlBtn = pattern.remote
-        ? `<button class="btn btn-sm btn-outline-secondary btn-copy-url" data-remote="${this.escapeHtml(pattern.remote)}" title="复制代理URL">
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-copy-url" title="复制代理URL" aria-label="复制代理URL">
             <i class="bi bi-clipboard"></i>
           </button>`
         : '';
 
-      // Format last matched time
-      let lastMatched = '-';
-      if (pattern.last_matched_at) {
-        const date = new Date(pattern.last_matched_at);
-        lastMatched = `<div title="${date.toLocaleString()}">
-          ${date.toLocaleDateString()}<br>
-          <small class="text-muted">共 ${pattern.match_count || 0} 次</small>
-        </div>`;
-      }
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><input type="checkbox" class="form-check-input row-checkbox" data-id="${pattern.id}"></td>
-        <td>${pattern.id}</td>
-        <td>${matchIcon}<strong>${this.escapeHtml(displayName)}</strong></td>
-        <td><span class="badge bg-secondary">S${pattern.season}</span></td>
-        <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
-        <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
+        <td><input type="checkbox" class="form-check-input row-checkbox"></td>
+        <td class="pattern-id"></td>
+        <td>${matchIcon}<strong class="pattern-display-name"></strong></td>
+        <td><span class="badge bg-secondary">S<span class="pattern-season"></span></span></td>
+        <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)} pattern-language"></span></td>
+        <td><span class="badge bg-primary pattern-quality"></span></td>
         <td>
           ${(() => {
             if (series) {
@@ -1191,23 +1115,62 @@ setupEventListeners() {
             return '<span class="text-muted">-</span>';
           })()}
         </td>
-        <td>${lastMatched}</td>
-        <td class="hide-mobile">${this.escapeHtml(pattern.releasegroup || '-')}</td>
+        <td class="pattern-last-matched"></td>
+        <td class="hide-mobile pattern-release-group"></td>
         <td class="text-nowrap">
           <div class="action-buttons d-flex gap-1">
             ${copyUrlBtn}
             ${sonarrBtn}
             ${addBtn}
             ${fixBtn}
-            <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}" title="编辑">
+            <button type="button" class="btn btn-sm btn-outline-primary btn-edit" title="编辑" aria-label="编辑 Pattern">
               <i class="bi bi-pencil"></i>
             </button>
-            <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${pattern.id}" title="删除">
+            <button type="button" class="btn btn-sm btn-outline-danger btn-delete" title="删除" aria-label="删除 Pattern">
               <i class="bi bi-trash"></i>
             </button>
           </div>
         </td>
       `;
+      const checkbox = tr.querySelector('.row-checkbox');
+      checkbox.dataset.id = pattern.id;
+      tr.querySelector('.pattern-id').textContent = pattern.id;
+      tr.querySelector('.pattern-display-name').textContent = displayName;
+      tr.querySelector('.pattern-season').textContent = pattern.season;
+      tr.querySelector('.pattern-language').textContent = pattern.language;
+      tr.querySelector('.pattern-quality').textContent = pattern.quality;
+      tr.querySelector('.pattern-release-group').textContent = pattern.releasegroup || '-';
+      tr.querySelectorAll('.btn-edit, .btn-delete, .btn-fix').forEach(button => {
+        button.dataset.id = pattern.id;
+      });
+      const warning = tr.querySelector('.pattern-match-warning');
+      if (warning) warning.title = `名称不完全匹配，Sonarr中为: ${series.title}`;
+      const fix = tr.querySelector('.btn-fix');
+      if (fix) fix.dataset.correctName = series.title;
+      const add = tr.querySelector('.btn-add-series');
+      if (add) add.dataset.query = pattern.series;
+      const copy = tr.querySelector('.btn-copy-url');
+      if (copy) copy.dataset.remote = pattern.remote;
+      const sonarrLink = tr.querySelector('.btn-sonarr-link');
+      if (sonarrLink) {
+        const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+        if (safeLink) sonarrLink.href = safeLink;
+        else sonarrLink.remove();
+      }
+      const lastMatched = tr.querySelector('.pattern-last-matched');
+      if (pattern.last_matched_at) {
+        const date = new Date(pattern.last_matched_at);
+        const wrapper = document.createElement('div');
+        wrapper.title = date.toLocaleString();
+        wrapper.append(document.createTextNode(date.toLocaleDateString()), document.createElement('br'));
+        const count = document.createElement('small');
+        count.className = 'text-muted';
+        count.textContent = `共 ${pattern.match_count || 0} 次`;
+        wrapper.appendChild(count);
+        lastMatched.appendChild(wrapper);
+      } else {
+        lastMatched.textContent = '-';
+      }
       tbody.appendChild(tr);
     });
 
@@ -1259,12 +1222,13 @@ setupEventListeners() {
               : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
           </div>
           ${!isFiltered ? `
-            <button class="btn btn-primary" onclick="app.showPatternEdit()">
+            <button type="button" class="btn btn-primary btn-empty-card-new">
               <i class="bi bi-plus-lg"></i> 新建 Pattern
             </button>
           ` : ''}
         </div>
       `;
+      container.querySelector('.btn-empty-card-new')?.addEventListener('click', () => this.showPatternEdit());
       return;
     }
 
@@ -1315,12 +1279,12 @@ setupEventListeners() {
     // Build poster HTML - use placeholder div if no image available
     let posterContent = '';
     if (hasPoster) {
-      posterContent = `<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="${this.escapeHtml(pattern.series)}" loading="lazy">`;
+      posterContent = '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" loading="lazy">';
     } else {
       posterContent = `
         <div class="pattern-card-poster-placeholder">
           <i class="bi bi-film"></i>
-          <span>${this.escapeHtml(pattern.series.substring(0, 12))}${pattern.series.length > 12 ? '...' : ''}</span>
+          <span></span>
         </div>
       `;
     }
@@ -1328,15 +1292,15 @@ setupEventListeners() {
     card.innerHTML = `
       <div class="pattern-card-poster cursor-pointer">
         ${posterContent}
-        <span class="pattern-card-season-badge">S${pattern.season}</span>
+        <span class="pattern-card-season-badge"></span>
         ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
       </div>
       <div class="pattern-card-body cursor-pointer">
-        <div class="pattern-card-title">${this.escapeHtml(pattern.series)}</div>
-        ${zhName ? `<div class="pattern-card-title-zh">${this.escapeHtml(zhName)}</div>` : ''}
+        <div class="pattern-card-title"></div>
+        ${zhName ? '<div class="pattern-card-title-zh"></div>' : ''}
         <div class="pattern-card-meta">
-          <span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span>
-          <span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span>
+          <span class="badge ${this.getLanguageBadgeClass(pattern.language)} pattern-card-language"></span>
+          <span class="badge bg-primary pattern-card-quality"></span>
         </div>
         ${series ? `
           <div class="pattern-card-progress">
@@ -1362,23 +1326,43 @@ setupEventListeners() {
           <input type="checkbox" class="form-check-input card-checkbox" data-id="${pattern.id}">
         </div>
         <div class="pattern-card-actions">
-          <button class="btn btn-sm btn-outline-secondary btn-card-copy" data-remote="${this.escapeHtml(pattern.remote || '')}" title="复制RSS链接">
+          <button type="button" class="btn btn-sm btn-outline-secondary btn-card-copy" title="复制RSS链接" aria-label="复制 RSS 链接">
             <i class="bi bi-clipboard"></i>
           </button>
           ${series?.titleSlug && this.sonarrHost ? `
-            <a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+            <a target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info btn-card-sonarr" title="在Sonarr中打开" aria-label="在 Sonarr 中打开">
               <i class="bi bi-box-arrow-up-right"></i>
             </a>
           ` : ''}
-          <button class="btn btn-sm btn-outline-primary btn-card-edit" data-id="${pattern.id}" title="编辑">
+          <button type="button" class="btn btn-sm btn-outline-primary btn-card-edit" title="编辑" aria-label="编辑 Pattern">
             <i class="bi bi-pencil"></i>
           </button>
-          <button class="btn btn-sm btn-outline-danger btn-card-delete" data-id="${pattern.id}" title="删除">
+          <button type="button" class="btn btn-sm btn-outline-danger btn-card-delete" title="删除" aria-label="删除 Pattern">
             <i class="bi bi-trash"></i>
           </button>
         </div>
       </div>
     `;
+
+    const posterImage = card.querySelector('.pattern-card-poster img');
+    if (posterImage) posterImage.alt = pattern.series;
+    const posterLabel = card.querySelector('.pattern-card-poster-placeholder span');
+    if (posterLabel) posterLabel.textContent = `${pattern.series.substring(0, 12)}${pattern.series.length > 12 ? '...' : ''}`;
+    card.querySelector('.pattern-card-season-badge').textContent = `S${pattern.season}`;
+    card.querySelector('.pattern-card-title').textContent = pattern.series;
+    if (zhName) card.querySelector('.pattern-card-title-zh').textContent = zhName;
+    card.querySelector('.pattern-card-language').textContent = pattern.language;
+    card.querySelector('.pattern-card-quality').textContent = pattern.quality;
+    card.querySelector('.btn-card-copy').dataset.remote = pattern.remote || '';
+    card.querySelectorAll('.btn-card-edit, .btn-card-delete').forEach(button => {
+      button.dataset.id = pattern.id;
+    });
+    const sonarrLink = card.querySelector('.btn-card-sonarr');
+    if (sonarrLink) {
+      const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+      if (safeLink) sonarrLink.href = safeLink;
+      else sonarrLink.remove();
+    }
 
     // Add event listeners
     const editHandler = (e) => {
@@ -1456,25 +1440,23 @@ setupEventListeners() {
     const img = card.querySelector('.pattern-card-poster img');
     if (!img) return;
 
-    try {
-      // Try TMDB first (优先使用竖版 poster)
-      if (series.tmdbId) {
-        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
-        if (response.ok) {
-          const tmdbData = await response.json();
-          // 优先使用 poster_path (竖版)，其次才是 backdrop_path
-          // 使用 w154 尺寸，足够卡片展示且加载极快
-          if (tmdbData.poster_path) {
-            img.src = `https://image.tmdb.org/t/p/w154${tmdbData.poster_path}`;
-            return;
-          } else if (tmdbData.backdrop_path) {
-            // 如果只有横版图，使用 w300 裁剪
-            img.src = `https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`;
-            return;
-          }
+    // Try TMDB first (优先使用竖版 poster)
+    if (series.tmdbId) {
+      try {
+        const tmdbData = await this.getTmdbDetails(series.tmdbId);
+        if (tmdbData?.poster_path) {
+          img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w154${tmdbData.poster_path}`);
+          return;
+        } else if (tmdbData?.backdrop_path) {
+          img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`);
+          return;
         }
+      } catch (error) {
+        console.warn('[loadCardPoster] TMDB failed, using Sonarr fallback:', error);
       }
+    }
 
+    try {
       // Fallback to Sonarr (优先 Poster)
       const poster = series.images?.find(i => i.coverType === 'poster');
       const fanart = series.images?.find(i => i.coverType === 'fanart');
@@ -1496,11 +1478,24 @@ setupEventListeners() {
         if (finalUrl.includes('/MediaCover')) {
            finalUrl += '?width=200'; 
         }
-        img.src = finalUrl;
+        img.src = this.imageProxyUrl(finalUrl);
       }
     } catch (e) {
       console.warn('[loadCardPoster] Failed:', e);
     }
+  }
+
+  getTmdbDetails(tmdbId) {
+    if (!this.tmdbDetails.has(tmdbId)) {
+      const details = this.apiRequest(`/tmdb/tv/${tmdbId}`)
+        .then(response => response.ok ? response.json() : null)
+        .catch(error => {
+          this.tmdbDetails.delete(tmdbId);
+          throw error;
+        });
+      this.tmdbDetails.set(tmdbId, details);
+    }
+    return this.tmdbDetails.get(tmdbId);
   }
 
   showCardSkeletonLoading() {
@@ -1573,19 +1568,24 @@ setupEventListeners() {
   }
 
   // 批量操作相关
+  getVisibleCheckboxes() {
+    const selector = this.currentView === 'card' ? '.card-checkbox' : '.row-checkbox';
+    return Array.from(document.querySelectorAll(selector));
+  }
+
   handleSelectAll(checked) {
-    document.querySelectorAll('.row-checkbox').forEach(cb => {
+    this.getVisibleCheckboxes().forEach(cb => {
       cb.checked = checked;
     });
     this.updateBatchUI();
   }
 
   updateBatchUI() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const allCheckboxes = this.getVisibleCheckboxes();
+    const selected = allCheckboxes.filter(checkbox => checkbox.checked);
     const batchDeleteBtn = document.getElementById('batch-delete-btn');
     const batchFixBtn = document.getElementById('batch-fix-btn');
     const selectAll = document.getElementById('select-all');
-    const allCheckboxes = document.querySelectorAll('.row-checkbox');
     
     document.getElementById('selected-count').textContent = selected.length;
     
@@ -1616,7 +1616,7 @@ setupEventListeners() {
   }
 
   async batchDelete() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const selected = this.getVisibleCheckboxes().filter(checkbox => checkbox.checked);
     const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
     
     if (ids.length === 0) return;
@@ -1642,7 +1642,7 @@ setupEventListeners() {
   }
 
   async batchFix() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const selected = this.getVisibleCheckboxes().filter(checkbox => checkbox.checked);
     const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
     
     if (ids.length === 0) return;
@@ -1671,15 +1671,17 @@ setupEventListeners() {
       let successCount = 0;
       for (const p of fixable) {
         const series = this.seriesList.find(s => s.title.toLowerCase() === p.series.toLowerCase());
-        p.series = series.title; // Update local
-        
+        const updatedPattern = { ...p, series: series.title };
         const response = await this.apiRequest(`/api/patterns/${p.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p)
+          body: JSON.stringify(updatedPattern)
         });
         
-        if (response.ok) successCount++;
+        if (response.ok) {
+          p.series = series.title;
+          successCount++;
+        }
       }
       
       this.loadPatterns();
@@ -1722,31 +1724,49 @@ setupEventListeners() {
         }
       });
       
-      let html = '';
+      outputDiv.replaceChildren();
       if (matches.length > 0) {
-        html += `<div class="text-success mb-2">✓ 匹配 ${matches.length} 条:</div>`;
-        html += '<ul class="mb-2">';
+        const summary = document.createElement('div');
+        summary.className = 'text-success mb-2';
+        summary.textContent = `✓ 匹配 ${matches.length} 条:`;
+        outputDiv.appendChild(summary);
+        const list = document.createElement('ul');
+        list.className = 'mb-2';
         matches.slice(0, 5).forEach(m => {
-          html += `<li>${this.escapeHtml(m.title)} → <strong>E${m.episode}</strong></li>`;
+          const item = document.createElement('li');
+          item.append(document.createTextNode(`${m.title} → `));
+          const episode = document.createElement('strong');
+          episode.textContent = `E${m.episode}`;
+          item.appendChild(episode);
+          list.appendChild(item);
         });
         if (matches.length > 5) {
-          html += `<li>... 还有 ${matches.length - 5} 条</li>`;
+          const remaining = document.createElement('li');
+          remaining.textContent = `... 还有 ${matches.length - 5} 条`;
+          list.appendChild(remaining);
         }
-        html += '</ul>';
+        outputDiv.appendChild(list);
       }
       
       if (nonMatches.length > 0) {
-        html += `<div class="text-danger">✗ 未匹配 ${nonMatches.length} 条</div>`;
+        const summary = document.createElement('div');
+        summary.className = 'text-danger';
+        summary.textContent = `✗ 未匹配 ${nonMatches.length} 条`;
+        outputDiv.appendChild(summary);
       }
       
       if (matches.length === 0) {
-        html = '<span class="text-danger">未匹配任何条目，请检查正则表达式</span>';
+        const message = document.createElement('span');
+        message.className = 'text-danger';
+        message.textContent = '未匹配任何条目，请检查正则表达式';
+        outputDiv.replaceChildren(message);
       }
-      
-      outputDiv.innerHTML = html;
       resultBox.classList.remove('d-none');
     } catch (error) {
-      outputDiv.innerHTML = `<span class="text-danger">正则表达式错误: ${this.escapeHtml(error.message)}</span>`;
+      const message = document.createElement('span');
+      message.className = 'text-danger';
+      message.textContent = `正则表达式错误: ${error.message}`;
+      outputDiv.replaceChildren(message);
       resultBox.classList.remove('d-none');
     }
   }
@@ -2094,12 +2114,9 @@ setupEventListeners() {
       console.error('Failed to load RSS preview:', error);
       this.rssItems = [];
 
-      const errorMsg = error.message || '加载失败';
-
-      // Show detailed error
       previewDiv.innerHTML = `
         <div class="alert alert-danger">
-          <i class="bi bi-exclamation-circle"></i> ${errorMsg}
+          <i class="bi bi-exclamation-circle" aria-hidden="true"></i> <span class="rss-error-message"></span>
           <br>
           <small class="text-muted">
             请检查：
@@ -2112,6 +2129,7 @@ setupEventListeners() {
           </small>
         </div>
       `;
+      previewDiv.querySelector('.rss-error-message').textContent = error.message || '加载失败';
     }
   }
 
@@ -2141,17 +2159,13 @@ setupEventListeners() {
       matchedItems = this.rssItems.map(title => ({ title, matched: false }));
     }
 
-    previewDiv.innerHTML = matchedItems.map((item, i) => `
-      <div class="rss-item ${item.matched ? 'matched' : ''}" data-index="${i}">
-        ${this.escapeHtml(item.title)}
-      </div>
-    `).join('');
-
-    previewDiv.querySelectorAll('.rss-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const index = parseInt(el.dataset.index);
-        this.selectRssItem(this.rssItems[index]);
-      });
+    previewDiv.replaceChildren();
+    matchedItems.forEach((item, index) => {
+      const row = document.createElement('div');
+      row.className = `rss-item${item.matched ? ' matched' : ''}`;
+      row.textContent = item.title;
+      row.addEventListener('click', () => this.selectRssItem(this.rssItems[index]));
+      previewDiv.appendChild(row);
     });
   }
 
@@ -2332,7 +2346,7 @@ setupEventListeners() {
         </div>
         
         <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-          <button id="append-btn" class="btn btn-primary" style="width: 100%; text-align: left; padding: 0.75rem;">
+          <button type="button" data-import-action="append" class="btn btn-primary" style="width: 100%; text-align: left; padding: 0.75rem;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <strong>追加模式</strong>
             </div>
@@ -2341,7 +2355,7 @@ setupEventListeners() {
             </small>
           </button>
           
-          <button id="overwrite-btn" class="btn btn-warning" style="width: 100%; text-align: left; padding: 0.75rem;">
+          <button type="button" data-import-action="overwrite" class="btn btn-warning" style="width: 100%; text-align: left; padding: 0.75rem;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <strong>覆盖模式</strong>
             </div>
@@ -2352,7 +2366,7 @@ setupEventListeners() {
         </div>
         
         <div style="text-align: right;">
-          <button id="cancel-btn" class="btn btn-secondary">取消</button>
+          <button type="button" data-import-action="cancel" class="btn btn-secondary">取消</button>
         </div>
       `;
       
@@ -2360,9 +2374,9 @@ setupEventListeners() {
       document.body.appendChild(overlay);
       
       // 获取按钮元素
-      const appendBtn = document.getElementById('append-btn');
-      const overwriteBtn = document.getElementById('overwrite-btn');
-      const cancelBtn = document.getElementById('cancel-btn');
+      const appendBtn = modal.querySelector('[data-import-action="append"]');
+      const overwriteBtn = modal.querySelector('[data-import-action="overwrite"]');
+      const cancelBtn = modal.querySelector('[data-import-action="cancel"]');
       
       // 添加事件监听器
       const handleConfirm = (mode) => {
@@ -2428,10 +2442,14 @@ setupEventListeners() {
       return true;
     });
 
-    // Render both views (only visible one matters for perf, but keep both in sync)
-    this.renderPatterns(filtered);
-    this.renderPatternCards(filtered);
+    this.filteredPatterns = filtered;
+    this.renderCurrentView(filtered);
     this.updateBatchUI(); // 更新批量操作UI状态
+  }
+
+  renderCurrentView(patterns = this.filteredPatterns || this.allPatterns || []) {
+    if (this.currentView === 'card') this.renderPatternCards(patterns);
+    else this.renderPatterns(patterns);
   }
 
   handleSortClick(th) {
@@ -2470,88 +2488,13 @@ setupEventListeners() {
   }
 
   async apiRequest(url, options = {}) {
-    const defaultOptions = {
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    const mergedOptions = {
-      ...defaultOptions,
-      ...options,
-      headers: {
-        ...defaultOptions.headers,
-        ...options.headers
-      }
-    };
-
-    if (options.body) {
-      mergedOptions.body = options.body;
-    }
-
-    try {
-      const response = await fetch(url, mergedOptions);
-
-      // Handle 401 Unauthorized - token expired or invalid
-      if (response.status === 401) {
-        console.warn('[apiRequest] Received 401 Unauthorized, token may be expired');
-        await this.handleAuthExpired();
-        throw new Error('Authentication expired, please login again');
-      }
-
-      // Check if response is HTML (likely an error page)
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('text/html')) {
-        console.error('[apiRequest] Received HTML instead of JSON:', url, response.status);
-        throw new Error('Server returned HTML instead of JSON (likely a server error)');
-      }
-
-      return response;
-    } catch (error) {
-      console.error(`[apiRequest] Error fetching ${url}:`, error);
-      throw error;
-    }
+    return this.client.request(url, options);
   }
 
-  // Handle authentication expiration - clear token and redirect to login
   async handleAuthExpired() {
-    console.log('[handleAuthExpired] Clearing token and checking OIDC config...');
-    
-    // Clear local token
-    localStorage.removeItem('token');
-    this.token = null;
-
-    // Check if OIDC is enabled and auto-login is configured
-    try {
-      const response = await fetch('/auth/config');
-      if (response.ok) {
-        const config = await response.json();
-        if (config.oidcEnabled && config.oidcAutoLogin) {
-          console.log('[handleAuthExpired] OIDC auto-login enabled, redirecting to OIDC login...');
-          Toast.warning('Session expired, redirecting to login...');
-          // Small delay to show the toast before redirect
-          setTimeout(() => {
-            window.location.href = '/auth/oidc/login';
-          }, 500);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('[handleAuthExpired] Failed to check OIDC config:', e);
-    }
-
-    // Fallback: show login page
-    console.log('[handleAuthExpired] Showing login page');
+    this.showLoggedOut();
     Toast.warning('Session expired, please login again');
-    document.getElementById('main-container').classList.add('d-none');
-    document.getElementById('login-container').classList.remove('d-none');
-  }
-
-  escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    await this.checkOidcConfig();
   }
 
   // ===== Auto-detect Subgroup from RSS =====
@@ -2622,21 +2565,34 @@ setupEventListeners() {
       return { total: 0, downloaded: 0, missing: 0, percent: 0 };
     }
 
-    const total = season.statistics.episodeCount || 0;
-    const downloaded = season.statistics.episodeFileCount || 0;
+    const normalizeCount = value => {
+      const count = Number(value);
+      return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+    };
+    const total = normalizeCount(season.statistics.episodeCount);
+    const downloaded = normalizeCount(season.statistics.episodeFileCount);
     
     // In Sonarr v3, episodeFileCount is what we have. 
     // totalEpisodeCount might include unmonitored ones.
     // For simplicity, we use episodeCount as total.
     
     const missing = Math.max(0, total - downloaded);
-    const percent = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+    const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
 
     return { total, downloaded, missing, percent };
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('[App] Mikanarr v2.1.0 - Build: 2026-01-23');
-  new MikanarrApp();
-});
+if (typeof module === 'object' && module.exports) {
+  module.exports = { MikanarrApp };
+} else {
+  window.MikanarrApp = MikanarrApp;
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('[App] Mikanarr v2.1.0 - Build: 2026-07-26');
+    new MikanarrApp();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .catch(error => console.error('Service Worker registration failed:', error));
+    }
+  });
+}
