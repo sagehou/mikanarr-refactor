@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29
 
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Approved
 
 **Scope:** Frontend visual refinement plus the remaining overlapping TMDB refresh race
 
