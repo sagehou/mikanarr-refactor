@@ -74,49 +74,41 @@
 
       <main class="container app-content">
 <div id="pattern-list" class="pattern-list">
-          <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Patterns</h2>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-              <!-- 视图切换 -->
-              <div class="btn-group" role="group" aria-label="视图切换">
-                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图" aria-label="卡片视图">
-                  <i class="bi bi-grid-3x3-gap"></i>
-                </button>
-                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图" aria-label="表格视图">
-                  <i class="bi bi-list"></i>
-                </button>
-              </div>
-              
-              <div class="input-group" style="width: auto;">
-                <span class="input-group-text"><i class="bi bi-funnel"></i></span>
-                <select class="form-select" id="filter-status" style="max-width: 150px;">
+          <header class="pattern-page-heading">
+            <div><p class="eyebrow">订阅规则</p><h1>Patterns</h1></div>
+            <div class="pattern-summary" aria-label="Pattern 摘要">
+              <span class="pattern-summary-chip"><strong id="pattern-total-count" class="pattern-summary-value">0</strong>总数</span>
+              <span class="pattern-summary-chip pattern-summary-chip--warning"><strong id="pattern-issue-count" class="pattern-summary-value">0</strong>需关注</span>
+              <span class="pattern-summary-chip"><strong id="pattern-summary-selected" class="pattern-summary-value">0</strong>已选择</span>
+            </div>
+          </header>
+          <div class="pattern-toolbar">
+            <div class="pattern-toolbar-discovery">
+              <label class="search-control" for="search-input" aria-label="搜索 Patterns"><i class="bi bi-search" aria-hidden="true"></i><input type="search" class="form-control" id="search-input" placeholder="搜索系列、正则或字幕组"></label>
+              <label class="filter-control" for="filter-status">
+                <span>状态</span>
+                <select class="form-select" id="filter-status">
                   <option value="all">所有状态</option>
                   <option value="normal">正常</option>
                   <option value="case-mismatch">名称不一致</option>
                   <option value="not-found">未找到系列</option>
                 </select>
+              </label>
+              <div class="btn-group view-toggle" role="group" aria-label="视图切换">
+                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图" aria-label="卡片视图"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图" aria-label="表格视图"><i class="bi bi-list" aria-hidden="true"></i></button>
               </div>
-              
-              <button class="btn btn-outline-warning d-none" id="batch-fix-btn">
-                <i class="bi bi-wrench"></i> 批量修复
-              </button>
-              <button class="btn btn-outline-danger d-none" id="batch-delete-btn">
-                <i class="bi bi-trash"></i> 批量删除 (<span id="selected-count">0</span>)
-              </button>
-              
-              <div class="vr mx-1"></div>
-              
-              <button class="btn btn-outline-secondary" id="export-btn" title="导出配置" aria-label="导出配置">
-                <i class="bi bi-download"></i>
-              </button>
-              <button class="btn btn-outline-primary" id="import-btn" type="button" title="导入配置" aria-label="导入配置">
-                <i class="bi bi-upload"></i>
-              </button>
+            </div>
+            <div class="pattern-toolbar-actions">
+              <div id="batch-actions" class="batch-actions d-none">
+                <button class="btn btn-outline-warning" id="batch-fix-btn"><i class="bi bi-wrench" aria-hidden="true"></i>批量修复</button>
+                <button class="btn btn-outline-danger" id="batch-delete-btn"><i class="bi bi-trash" aria-hidden="true"></i>批量删除 (<span id="selected-count">0</span>)</button>
+              </div>
+              <span class="toolbar-divider" aria-hidden="true"></span>
+              <button class="btn btn-outline-secondary" id="export-btn" title="导出配置" aria-label="导出配置"><i class="bi bi-download" aria-hidden="true"></i></button>
+              <button class="btn btn-outline-primary" id="import-btn" type="button" title="导入配置" aria-label="导入配置"><i class="bi bi-upload" aria-hidden="true"></i></button>
               <input type="file" id="import-input" accept=".json" hidden>
-              <input type="text" class="form-control" id="search-input" placeholder="搜索..." style="max-width: 200px;">
-              <button class="btn btn-primary" id="new-pattern-btn">
-                <i class="bi bi-plus-lg"></i> 新建
-              </button>
+              <button class="btn btn-primary" id="new-pattern-btn"><i class="bi bi-plus-lg" aria-hidden="true"></i>新建</button>
             </div>
           </div>
 

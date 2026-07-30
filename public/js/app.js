@@ -572,7 +572,7 @@ setupEventListeners() {
     for (let i = 0; i < 5; i++) {
       skeletonHtml += `
         <tr>
-          <td><div class="skeleton skeleton-cell-sm" style="height: 18px; width: 18px;"></div></td>
+          <td><div class="skeleton skeleton-checkbox"></div></td>
           <td><div class="skeleton skeleton-cell-sm"></div></td>
           <td><div class="skeleton skeleton-cell-xl"></div></td>
           <td><div class="skeleton skeleton-cell-sm"></div></td>
@@ -1013,6 +1013,20 @@ setupEventListeners() {
   }
 
 
+  getPatternStatus(pattern) {
+    const series = this.seriesList?.find(item => item.title.toLowerCase() === pattern.series.toLowerCase());
+    if (!series) return 'not-found';
+    return series.title === pattern.series ? 'normal' : 'case-mismatch';
+  }
+
+  updatePatternSummary() {
+    const patterns = this.allPatterns || [];
+    const total = document.getElementById('pattern-total-count');
+    const issues = document.getElementById('pattern-issue-count');
+    if (total) total.textContent = String(patterns.length);
+    if (issues) issues.textContent = String(patterns.filter(item => this.getPatternStatus(item) !== 'normal').length);
+  }
+
   renderPatterns(patterns) {
     const tbody = document.getElementById('pattern-table-body');
     tbody.innerHTML = '';
@@ -1021,11 +1035,12 @@ setupEventListeners() {
     if (!patterns || patterns.length === 0) {
       const isFiltered = document.getElementById('search-input').value || 
                          document.getElementById('filter-status').value !== 'all';
+      const stateClass = isFiltered ? 'empty-state--filtered' : 'empty-state--library';
       
       tbody.innerHTML = `
         <tr>
-          <td colspan="9">
-            <div class="empty-state">
+          <td colspan="10">
+            <div class="empty-state ${stateClass}">
               <div class="empty-state-icon">
                 <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
               </div>
@@ -1051,6 +1066,12 @@ setupEventListeners() {
     }
     
     patterns.forEach(pattern => {
+      const status = this.getPatternStatus(pattern);
+      const statusMeta = {
+        normal: { label: '正常', badgeClass: 'status-ok' },
+        'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
+        'not-found': { label: '未找到系列', badgeClass: 'status-error' }
+      }[status];
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
@@ -1093,10 +1114,11 @@ setupEventListeners() {
         : '';
 
       const tr = document.createElement('tr');
+      tr.className = `pattern-row pattern-row--${status}`;
       tr.innerHTML = `
         <td><input type="checkbox" class="form-check-input row-checkbox"></td>
         <td class="pattern-id"></td>
-        <td>${matchIcon}<strong class="pattern-display-name"></strong></td>
+        <td>${matchIcon}<span class="pattern-status-badge"></span> <strong class="pattern-display-name"></strong></td>
         <td><span class="badge bg-secondary">S<span class="pattern-season"></span></span></td>
         <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)} pattern-language"></span></td>
         <td><span class="badge bg-primary pattern-quality"></span></td>
@@ -1138,6 +1160,9 @@ setupEventListeners() {
       `;
       const checkbox = tr.querySelector('.row-checkbox');
       checkbox.dataset.id = pattern.id;
+      const tableStatus = tr.querySelector('.pattern-status-badge');
+      tableStatus.classList.add(statusMeta.badgeClass);
+      tableStatus.textContent = statusMeta.label;
       tr.querySelector('.pattern-id').textContent = pattern.id;
       tr.querySelector('.pattern-display-name').textContent = displayName;
       tr.querySelector('.pattern-season').textContent = pattern.season;
@@ -1211,9 +1236,10 @@ setupEventListeners() {
     if (!patterns || patterns.length === 0) {
       const isFiltered = document.getElementById('search-input').value || 
                          document.getElementById('filter-status').value !== 'all';
+      const stateClass = isFiltered ? 'empty-state--filtered' : 'empty-state--library';
       
       container.innerHTML = `
-        <div class="pattern-card-empty">
+        <div class="pattern-card-empty ${stateClass}">
           <div class="empty-state-icon">
             <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
           </div>
@@ -1236,27 +1262,19 @@ setupEventListeners() {
       return;
     }
 
-    patterns.forEach(pattern => {
-      const card = this.createPatternCard(pattern);
-      container.appendChild(card);
-    });
+    patterns.forEach((pattern, index) => container.appendChild(this.createPatternCard(pattern, index)));
   }
 
-  createPatternCard(pattern) {
+  createPatternCard(pattern, index = 0) {
+    const status = this.getPatternStatus(pattern);
+    const statusMeta = {
+      normal: { label: '正常', badgeClass: 'status-ok' },
+      'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
+      'not-found': { label: '未找到系列', badgeClass: 'status-error' }
+    }[status];
     // Find the series to get tmdbId and stats
     const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
     const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
-    
-    // Determine status
-    let statusClass = '';
-    let statusText = '';
-    if (!series) {
-      statusClass = 'status-error';
-      statusText = '未找到';
-    } else if (series.title !== pattern.series) {
-      statusClass = 'status-warning';
-      statusText = '名称不一致';
-    }
 
     // Calculate episode stats
     let downloadedEpisodes = 0;
@@ -1276,7 +1294,8 @@ setupEventListeners() {
     const hasPoster = series?.tmdbId || series?.images?.some(i => i.coverType === 'fanart' || i.coverType === 'poster');
 
     const card = document.createElement('div');
-    card.className = 'pattern-card';
+    card.className = `pattern-card pattern-card--${status}`;
+    card.style.setProperty('--card-index', String(Math.min(index, 8)));
     card.dataset.patternId = pattern.id;
     card.dataset.tmdbId = series?.tmdbId || '';
 
@@ -1297,7 +1316,7 @@ setupEventListeners() {
       <div class="pattern-card-poster cursor-pointer">
         ${posterContent}
         <span class="pattern-card-season-badge"></span>
-        ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
+        <span class="pattern-card-status-badge"></span>
       </div>
       <div class="pattern-card-body cursor-pointer">
         <div class="pattern-card-title"></div>
@@ -1327,7 +1346,7 @@ setupEventListeners() {
       </div>
       <div class="pattern-card-footer">
         <div class="pattern-card-checkbox">
-          <input type="checkbox" class="form-check-input card-checkbox" data-id="${pattern.id}">
+          <input type="checkbox" class="form-check-input card-checkbox">
         </div>
         <div class="pattern-card-actions">
           <button type="button" class="btn btn-sm btn-outline-secondary btn-card-copy" title="复制RSS链接" aria-label="复制 RSS 链接">
@@ -1352,12 +1371,16 @@ setupEventListeners() {
     if (posterImage) posterImage.alt = pattern.series;
     const posterLabel = card.querySelector('.pattern-card-poster-placeholder span');
     if (posterLabel) posterLabel.textContent = `${pattern.series.substring(0, 12)}${pattern.series.length > 12 ? '...' : ''}`;
+    const cardStatus = card.querySelector('.pattern-card-status-badge');
+    cardStatus.classList.add(statusMeta.badgeClass);
+    cardStatus.textContent = statusMeta.label;
     card.querySelector('.pattern-card-season-badge').textContent = `S${pattern.season}`;
     card.querySelector('.pattern-card-title').textContent = pattern.series;
     if (zhName) card.querySelector('.pattern-card-title-zh').textContent = zhName;
     card.querySelector('.pattern-card-language').textContent = pattern.language;
     card.querySelector('.pattern-card-quality').textContent = pattern.quality;
     card.querySelector('.btn-card-copy').dataset.remote = pattern.remote || '';
+    card.querySelector('.card-checkbox').dataset.id = pattern.id;
     card.querySelectorAll('.btn-card-edit, .btn-card-delete').forEach(button => {
       button.dataset.id = pattern.id;
     });
@@ -1586,8 +1609,13 @@ setupEventListeners() {
     const batchDeleteBtn = document.getElementById('batch-delete-btn');
     const batchFixBtn = document.getElementById('batch-fix-btn');
     const selectAll = document.getElementById('select-all');
-    
-    document.getElementById('selected-count').textContent = selected.length;
+    const count = String(selected.length);
+    const selectedCount = document.getElementById('selected-count');
+    const summarySelected = document.getElementById('pattern-summary-selected');
+    const batchActions = document.getElementById('batch-actions');
+    if (selectedCount) selectedCount.textContent = count;
+    if (summarySelected) summarySelected.textContent = count;
+    batchActions?.classList.toggle('d-none', selected.length === 0);
     
     if (selected.length > 0) {
       batchDeleteBtn.classList.remove('d-none');
@@ -2443,26 +2471,11 @@ setupEventListeners() {
       if (!textMatch) return false;
 
       // 2. 状态过滤
-      if (statusFilter === 'all') return true;
-
-      const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
-      
-      if (statusFilter === 'not-found') {
-        return !series;
-      }
-      
-      if (statusFilter === 'case-mismatch') {
-        return series && series.title !== pattern.series;
-      }
-      
-      if (statusFilter === 'normal') {
-        return series && series.title === pattern.series;
-      }
-
-      return true;
+      return statusFilter === 'all' || this.getPatternStatus(pattern) === statusFilter;
     });
 
     this.filteredPatterns = filtered;
+    this.updatePatternSummary();
     this.renderCurrentView(filtered);
     this.updateBatchUI(); // 更新批量操作UI状态
   }

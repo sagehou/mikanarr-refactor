@@ -24,6 +24,23 @@ test('refined application shell preserves semantic login and navigation structur
   dom.window.close();
 });
 
+test('Pattern workspace groups summary discovery and data actions', () => {
+  const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+  assert.ok(document.querySelector('.pattern-page-heading'));
+  assert.deepEqual(
+    Array.from(document.querySelectorAll('.pattern-summary-value')).map(node => node.id),
+    ['pattern-total-count', 'pattern-issue-count', 'pattern-summary-selected']
+  );
+  assert.ok(document.querySelector('.pattern-toolbar-discovery #search-input'));
+  assert.ok(document.querySelector('.pattern-toolbar-actions #new-pattern-btn'));
+  assert.ok(document.getElementById('batch-actions').classList.contains('d-none'));
+  assert.equal(document.querySelector('#filter-status').hasAttribute('style'), false);
+  assert.equal(document.querySelector('#search-input').hasAttribute('style'), false);
+  dom.window.close();
+});
+
 function installDom(body) {
   const dom = new JSDOM(`<!doctype html><body>${body}</body>`, {
     url: 'https://mikanarr.test/'
@@ -146,6 +163,64 @@ test('Pattern table renders names and seasons as literal text', () => {
   assert.equal(cards.querySelector('[onerror]'), null);
   assert.match(cards.textContent, /<img src=x onerror=/);
 
+  cleanupDom(dom);
+});
+
+test('Pattern summary and compact card states follow data and selection', () => {
+  const dom = installDom(`
+    <span id="pattern-total-count"></span><span id="pattern-issue-count"></span>
+    <span id="pattern-summary-selected"></span><span id="selected-count"></span>
+    <div id="batch-actions" class="d-none"><button id="batch-delete-btn"></button><button id="batch-fix-btn"></button></div>
+    <input id="select-all" type="checkbox"><input class="card-checkbox" data-id="2" type="checkbox" checked>
+    <div id="pattern-card-view"></div><table><tbody id="pattern-table-body"></tbody></table>
+    <input id="search-input" value=""><select id="filter-status"><option value="all" selected>all</option></select>
+  `);
+  const app = makeApp();
+  app.currentView = 'card';
+  app.seriesList = [{ title: 'Exact' }, { title: 'Canonical' }];
+  app.allPatterns = [
+    { id: 1, series: 'Exact', season: '01', language: 'Chinese', quality: 'WEBDL', remote: '' },
+    { id: 2, series: 'canonical', season: '01', language: 'Chinese', quality: 'WEBDL', remote: '' },
+    { id: 3, series: 'Missing', season: '01', language: 'Chinese', quality: 'WEBDL', remote: '' }
+  ];
+  app.updatePatternSummary();
+  app.updateBatchUI();
+  app.renderPatternCards(app.allPatterns);
+  assert.equal(document.getElementById('pattern-total-count').textContent, '3');
+  assert.equal(document.getElementById('pattern-issue-count').textContent, '2');
+  assert.equal(document.getElementById('pattern-summary-selected').textContent, '1');
+  assert.equal(document.getElementById('batch-actions').classList.contains('d-none'), false);
+  assert.equal(document.querySelectorAll('.pattern-card--normal').length, 1);
+  assert.equal(document.querySelectorAll('.pattern-card--case-mismatch').length, 1);
+  assert.equal(document.querySelectorAll('.pattern-card--not-found').length, 1);
+  cleanupDom(dom);
+});
+
+test('empty library and filtered-empty results use distinct states', () => {
+  const dom = installDom(`
+    <input id="search-input" value="">
+    <select id="filter-status">
+      <option value="all" selected>all</option>
+      <option value="not-found">not found</option>
+    </select>
+    <div id="pattern-card-view"></div>
+    <table><tbody id="pattern-table-body"></tbody></table>
+  `);
+  const app = makeApp();
+
+  app.renderPatternCards([]);
+  assert.ok(document.querySelector('.pattern-card-empty.empty-state--library'));
+  document.getElementById('search-input').value = 'missing';
+  app.renderPatternCards([]);
+  assert.ok(document.querySelector('.pattern-card-empty.empty-state--filtered'));
+
+  document.getElementById('search-input').value = '';
+  app.renderPatterns([]);
+  assert.ok(document.querySelector('.empty-state.empty-state--library'));
+  assert.equal(document.querySelector('#pattern-table-body td').colSpan, 10);
+  document.getElementById('filter-status').value = 'not-found';
+  app.renderPatterns([]);
+  assert.ok(document.querySelector('.empty-state.empty-state--filtered'));
   cleanupDom(dom);
 });
 
