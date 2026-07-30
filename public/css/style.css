@@ -469,8 +469,10 @@ body {
   --bs-btn-disabled-opacity: 1;
 }
 
-:is(.btn-primary, .btn-outline-primary, .btn-outline-secondary, .btn-outline-success, .btn-outline-warning, .btn-outline-danger, .btn-outline-info):focus-visible {
-  box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--focus-ring) 38%, transparent) !important;
+.btn:focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
 }
 
 .btn:disabled,
