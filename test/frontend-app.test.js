@@ -94,6 +94,7 @@ function makeApp() {
   app.seriesList = [];
   app.seriesLoadGeneration = 0;
   app.patternLoadGeneration = 0;
+  app.patternLoadingGeneration = null;
   app.tmdbCache = {};
   app.tmdbDetails = new Map();
   app.allPatterns = [];
@@ -411,6 +412,96 @@ test('older Pattern success cannot replace a newer successful load', async () =>
 
   assert.deepEqual(app.allPatterns, [newerPattern]);
   assert.deepEqual(app.filteredPatterns, [newerPattern]);
+  assert.equal(document.querySelector('.pattern-card').dataset.patternId, '2');
+  cleanupDom(dom);
+});
+
+test('latest Pattern loading survives Series, filter, and view renders until it settles', async () => {
+  const dom = installDom(`
+    <span id="pattern-total-count"></span><span id="pattern-issue-count"></span>
+    <span id="pattern-summary-selected"></span><span id="selected-count"></span>
+    <div id="batch-actions" class="d-none"></div>
+    <button id="batch-delete-btn" class="d-none"></button><button id="batch-fix-btn" class="d-none"></button>
+    <input id="select-all" type="checkbox">
+    <button id="view-card-btn" class="active"></button><button id="view-table-btn"></button>
+    <input id="search-input" value="">
+    <select id="filter-status">
+      <option value="all" selected>all</option>
+      <option value="normal">normal</option>
+    </select>
+    <select id="series"><option value="">choose</option></select>
+    <div id="pattern-card-view" class="pattern-card-grid"></div>
+    <div id="pattern-table-view" class="d-none"><table><tbody id="pattern-table-body"></tbody></table></div>
+  `);
+  const app = makeApp();
+  const older = deferred();
+  const newer = deferred();
+  const requests = [older, newer];
+  const stalePattern = {
+    id: 1,
+    series: 'Stale Series',
+    season: '01',
+    pattern: 'stale',
+    language: 'Chinese',
+    quality: 'WEBDL',
+    releasegroup: '',
+    remote: ''
+  };
+  const freshPattern = { ...stalePattern, id: 2, series: 'Fresh Series', pattern: 'fresh' };
+  let patternRequest = 0;
+  app.currentView = 'card';
+  app.allPatterns = [stalePattern];
+  app.filteredPatterns = [stalePattern];
+  app.updateSortIndicators = () => {};
+  app.apiRequest = async url => {
+    if (url.startsWith('/api/patterns?')) return requests[patternRequest++].promise;
+    if (url === '/sonarr/api/v3/series') {
+      return { ok: true, status: 200, json: async () => [{ title: 'Fresh Series' }] };
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  const assertBothViewsLoading = () => {
+    assert.equal(document.querySelectorAll('.pattern-card-skeleton').length, 6);
+    assert.equal(document.querySelectorAll('#pattern-table-body tr').length, 5);
+    assert.equal(document.querySelectorAll('#pattern-table-body .skeleton').length > 0, true);
+    assert.equal(document.getElementById('pattern-card-view').textContent.includes('Stale Series'), false);
+    assert.equal(document.getElementById('pattern-table-body').textContent.includes('Stale Series'), false);
+  };
+
+  const olderLoad = app.loadPatterns();
+  const newerLoad = app.loadPatterns();
+  assertBothViewsLoading();
+
+  older.resolve({ ok: true, json: async () => [stalePattern] });
+  await olderLoad;
+  assert.equal(app.patternLoadingGeneration, 2);
+  assertBothViewsLoading();
+
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    await app.loadSeries();
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    console.log = originalLog;
+  }
+  assertBothViewsLoading();
+
+  document.getElementById('search-input').value = 'stale';
+  app.filterPatterns('stale');
+  assertBothViewsLoading();
+
+  app.switchView('table');
+  assertBothViewsLoading();
+
+  document.getElementById('search-input').value = '';
+  newer.resolve({ ok: true, json: async () => [freshPattern] });
+  await newerLoad;
+
+  assert.equal(app.patternLoadingGeneration, null);
+  assert.equal(document.querySelector('#pattern-table-body .pattern-id').textContent, '2');
+  app.switchView('card');
   assert.equal(document.querySelector('.pattern-card').dataset.patternId, '2');
   cleanupDom(dom);
 });
@@ -927,6 +1018,7 @@ test('real constructor can suppress initialization and never owns a stale JWT', 
   assert.deepEqual(calls, [{ url: '/api/patterns', options: { method: 'POST' } }]);
   assert.equal(initCalls, 0);
   assert.equal(Object.hasOwn(app, 'token'), false);
+  assert.equal(app.patternLoadingGeneration, null);
   cleanupDom(dom);
 });
 
@@ -979,6 +1071,7 @@ test('Pattern reload reconciles selection and clears the active view after failu
 
   const loading = app.loadPatterns();
   const duringLoading = {
+    loadingGeneration: app.patternLoadingGeneration,
     selected: document.getElementById('pattern-summary-selected').textContent,
     batchHidden: document.getElementById('batch-actions').classList.contains('d-none'),
     selectAll: document.getElementById('select-all').checked,
@@ -995,6 +1088,7 @@ test('Pattern reload reconciles selection and clears the active view after failu
   }
 
   const afterFailure = {
+    loadingGeneration: app.patternLoadingGeneration,
     allPatterns: app.allPatterns,
     filteredPatterns: app.filteredPatterns,
     total: document.getElementById('pattern-total-count').textContent,
@@ -1005,8 +1099,9 @@ test('Pattern reload reconciles selection and clears the active view after failu
   };
 
   assert.deepEqual({ duringLoading, afterFailure }, {
-    duringLoading: { selected: '0', batchHidden: true, selectAll: false, cardSkeletons: 6 },
+    duringLoading: { loadingGeneration: 1, selected: '0', batchHidden: true, selectAll: false, cardSkeletons: 6 },
     afterFailure: {
+      loadingGeneration: null,
       allPatterns: [],
       filteredPatterns: [],
       total: '0',

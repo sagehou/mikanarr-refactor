@@ -14,6 +14,7 @@ class MikanarrApp {
     this.seriesList = [];
     this.seriesLoadGeneration = 0;
     this.patternLoadGeneration = 0;
+    this.patternLoadingGeneration = null;
     this.rssItems = [];
     this.tmdbDetails = new Map();
     this.authExpired = false;
@@ -538,6 +539,7 @@ setupEventListeners() {
 
   async loadPatterns() {
     const generation = ++this.patternLoadGeneration;
+    this.patternLoadingGeneration = generation;
     this.patternLoadError = null;
     // Show skeleton loading
     this.showSkeletonLoading();
@@ -551,6 +553,7 @@ setupEventListeners() {
 
       const patterns = await response.json();
       if (generation !== this.patternLoadGeneration) return;
+      this.patternLoadingGeneration = null;
 
       if (!Array.isArray(patterns)) {
         console.error('[loadPatterns] Expected array but got:', patterns);
@@ -564,6 +567,7 @@ setupEventListeners() {
       this.updateSortIndicators();
     } catch (error) {
       if (generation !== this.patternLoadGeneration) return;
+      this.patternLoadingGeneration = null;
       console.error('Failed to load patterns:', error);
       this.patternLoadError = '无法加载 Patterns，请检查连接后重试';
       this.allPatterns = [];
@@ -2491,6 +2495,8 @@ setupEventListeners() {
   }
 
   renderCurrentView(patterns = this.filteredPatterns || this.allPatterns || []) {
+    if (this.patternLoadingGeneration !== null &&
+        this.patternLoadingGeneration === this.patternLoadGeneration) return;
     if (this.patternLoadError) {
       this.renderPatternLoadError();
       return;
