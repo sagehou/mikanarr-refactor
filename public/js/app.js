@@ -13,6 +13,7 @@ class MikanarrApp {
     this.currentPatternId = null;
     this.seriesList = [];
     this.seriesLoadGeneration = 0;
+    this.patternLoadGeneration = 0;
     this.rssItems = [];
     this.tmdbDetails = new Map();
     this.authExpired = false;
@@ -536,6 +537,7 @@ setupEventListeners() {
   }
 
   async loadPatterns() {
+    const generation = ++this.patternLoadGeneration;
     this.patternLoadError = null;
     // Show skeleton loading
     this.showSkeletonLoading();
@@ -543,13 +545,13 @@ setupEventListeners() {
     try {
       const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
       const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
-      
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const patterns = await response.json();
-      
+      if (generation !== this.patternLoadGeneration) return;
+
       if (!Array.isArray(patterns)) {
         console.error('[loadPatterns] Expected array but got:', patterns);
         this.allPatterns = [];
@@ -561,6 +563,7 @@ setupEventListeners() {
       this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
     } catch (error) {
+      if (generation !== this.patternLoadGeneration) return;
       console.error('Failed to load patterns:', error);
       this.patternLoadError = '无法加载 Patterns，请检查连接后重试';
       this.allPatterns = [];

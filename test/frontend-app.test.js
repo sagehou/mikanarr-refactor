@@ -93,6 +93,7 @@ function makeApp() {
   const app = Object.create(MikanarrApp.prototype);
   app.seriesList = [];
   app.seriesLoadGeneration = 0;
+  app.patternLoadGeneration = 0;
   app.tmdbCache = {};
   app.tmdbDetails = new Map();
   app.allPatterns = [];
@@ -313,6 +314,104 @@ test('newer successful Pattern load replaces an older failure state', async () =
   assert.equal(app.patternLoadError, null);
   assert.equal(document.querySelectorAll('.pattern-card').length, 1);
   assert.equal(document.querySelector('.load-error-state'), null);
+  cleanupDom(dom);
+});
+
+test('older Pattern failure cannot replace a newer successful load', async () => {
+  const dom = installDom(`
+    <span id="pattern-total-count"></span><span id="pattern-issue-count"></span>
+    <span id="pattern-summary-selected"></span><span id="selected-count"></span>
+    <div id="batch-actions" class="d-none"></div>
+    <button id="batch-delete-btn" class="d-none"></button><button id="batch-fix-btn" class="d-none"></button>
+    <input id="select-all" type="checkbox"><input id="search-input" value="">
+    <select id="filter-status"><option value="all" selected>all</option></select>
+    <div id="pattern-card-view"></div>
+    <table><tbody id="pattern-table-body"></tbody></table>
+  `);
+  const app = makeApp();
+  const older = deferred();
+  const newer = deferred();
+  const recovered = {
+    id: 2,
+    series: 'Recovered',
+    season: '01',
+    pattern: 'newer',
+    language: 'Chinese',
+    quality: 'WEBDL',
+    releasegroup: '',
+    remote: ''
+  };
+  const requests = [older, newer];
+  let requestIndex = 0;
+  app.currentView = 'card';
+  app.showSkeletonLoading = () => {};
+  app.updateSortIndicators = () => {};
+  app.apiRequest = async () => requests[requestIndex++].promise;
+
+  const olderLoad = app.loadPatterns();
+  const newerLoad = app.loadPatterns();
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    newer.resolve({ ok: true, json: async () => [recovered] });
+    await newerLoad;
+    older.resolve({ ok: false, status: 503 });
+    await olderLoad;
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(app.allPatterns, [recovered]);
+  assert.deepEqual(app.filteredPatterns, [recovered]);
+  assert.equal(app.patternLoadError, null);
+  assert.equal(document.querySelectorAll('.pattern-card').length, 1);
+  assert.equal(document.querySelector('.load-error-state'), null);
+  assert.equal(document.querySelector('.toast-error'), null);
+  cleanupDom(dom);
+});
+
+test('older Pattern success cannot replace a newer successful load', async () => {
+  const dom = installDom(`
+    <span id="pattern-total-count"></span><span id="pattern-issue-count"></span>
+    <span id="pattern-summary-selected"></span><span id="selected-count"></span>
+    <div id="batch-actions" class="d-none"></div>
+    <button id="batch-delete-btn" class="d-none"></button><button id="batch-fix-btn" class="d-none"></button>
+    <input id="select-all" type="checkbox"><input id="search-input" value="">
+    <select id="filter-status"><option value="all" selected>all</option></select>
+    <div id="pattern-card-view"></div>
+    <table><tbody id="pattern-table-body"></tbody></table>
+  `);
+  const app = makeApp();
+  const older = deferred();
+  const newer = deferred();
+  const olderPattern = {
+    id: 1,
+    series: 'Older',
+    season: '01',
+    pattern: 'older',
+    language: 'Chinese',
+    quality: 'WEBDL',
+    releasegroup: '',
+    remote: ''
+  };
+  const newerPattern = { ...olderPattern, id: 2, series: 'Newer', pattern: 'newer' };
+  const requests = [older, newer];
+  let requestIndex = 0;
+  app.currentView = 'card';
+  app.showSkeletonLoading = () => {};
+  app.updateSortIndicators = () => {};
+  app.apiRequest = async () => requests[requestIndex++].promise;
+
+  const olderLoad = app.loadPatterns();
+  const newerLoad = app.loadPatterns();
+  newer.resolve({ ok: true, json: async () => [newerPattern] });
+  await newerLoad;
+  older.resolve({ ok: true, json: async () => [olderPattern] });
+  await olderLoad;
+
+  assert.deepEqual(app.allPatterns, [newerPattern]);
+  assert.deepEqual(app.filteredPatterns, [newerPattern]);
+  assert.equal(document.querySelector('.pattern-card').dataset.patternId, '2');
   cleanupDom(dom);
 });
 
