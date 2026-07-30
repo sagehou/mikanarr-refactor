@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 const { JSDOM } = require('jsdom');
 const { createAppFixture } = require('./helpers/fixtures');
 
@@ -7,6 +9,20 @@ const { MikanarrApp } = require('../public/js/app');
 const { createClient } = require('../public/js/api');
 
 const payload = '<img src=x onerror="globalThis.pwned=1">';
+
+test('refined application shell preserves semantic login and navigation structure', () => {
+  const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+  assert.ok(document.getElementById('login-container').classList.contains('login-shell'));
+  assert.equal(document.querySelector('#login-container > .login-ambient').getAttribute('aria-hidden'), 'true');
+  assert.ok(document.getElementById('main-container').classList.contains('app-shell'));
+  assert.ok(document.querySelector('nav').classList.contains('app-navbar'));
+  assert.ok(document.querySelector('#main-container > .app-content'));
+  assert.equal(document.querySelector('#oidc-login-container > .login-divider').textContent.trim(), '或');
+  assert.equal(document.querySelector('meta[name="theme-color"]').content, '#a86f4c');
+  dom.window.close();
+});
 
 function installDom(body) {
   const dom = new JSDOM(`<!doctype html><body>${body}</body>`, {
