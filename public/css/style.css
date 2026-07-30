@@ -929,7 +929,7 @@ body {
   background: var(--surface-raised);
   box-shadow: var(--shadow-rest);
   overflow: clip;
-  animation: card-enter var(--motion-enter) both;
+  animation: card-enter var(--motion-enter) backwards;
   animation-delay: calc(min(var(--card-index, 0), 8) * 34ms);
 }
 
