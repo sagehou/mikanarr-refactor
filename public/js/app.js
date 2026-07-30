@@ -12,6 +12,7 @@ class MikanarrApp {
     });
     this.currentPatternId = null;
     this.seriesList = [];
+    this.seriesLoadGeneration = 0;
     this.rssItems = [];
     this.tmdbDetails = new Map();
     this.authExpired = false;
@@ -766,6 +767,7 @@ setupEventListeners() {
   }
 
   async loadSeries() {
+    const generation = ++this.seriesLoadGeneration;
     try {
       console.log('[loadSeries] Fetching series from Sonarr...');
       const response = await this.apiRequest('/sonarr/api/v3/series');
@@ -790,51 +792,42 @@ setupEventListeners() {
       
       console.log('[loadSeries] Loaded', series.length, 'series');
       
+      if (generation !== this.seriesLoadGeneration) return;
       this.seriesList = series;
-      this.renderSeriesOptions(series);
+      this.renderSeriesOptions(this.seriesList);
       this.filterPatterns(document.getElementById('search-input').value);
 
-      void this.syncTmdbCache(series).then(() => {
-        this.renderSeriesOptions(series);
+      void this.syncTmdbCache(series).then(cache => {
+        if (generation !== this.seriesLoadGeneration) return;
+        if (cache !== null) this.tmdbCache = cache;
+        this.renderSeriesOptions(this.seriesList);
         this.filterPatterns(document.getElementById('search-input').value);
       }).catch(() => console.error('[loadSeries] TMDB refresh failed'));
     } catch (error) {
       console.error('[loadSeries] Failed to load series:', error);
-      const errorMsg = error.message || 'Unknown error';
-      
-      // Show error message to user
-      const seriesSelect = document.getElementById('series');
-      if (seriesSelect) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'alert alert-warning mt-2';
-        errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>';
-        errorDiv.querySelector('.sonarr-load-error').textContent = `加载 Sonarr 系列失败: ${errorMsg}`;
-        
-        // Remove existing error if any
-        const existingError = seriesSelect.parentElement.querySelector('.alert');
-        if (existingError) {
-          existingError.remove();
-        }
-        
-        seriesSelect.parentElement.appendChild(errorDiv);
-      }
+      if (generation !== this.seriesLoadGeneration) return;
+      this.renderSeriesLoadError(error);
     }
   }
 
-  async syncTmdbCache(series) {
-    // Prepare series data for sync
-    const seriesData = series
-      .filter(s => s.tmdbId)
-      .map(s => ({ tmdbId: s.tmdbId, titleEn: s.title }));
+  renderSeriesLoadError(error) {
+    const seriesSelect = document.getElementById('series');
+    if (!seriesSelect) return;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-warning mt-2';
+    errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>';
+    errorDiv.querySelector('.sonarr-load-error').textContent = `加载 Sonarr 系列失败: ${error.message || 'Unknown error'}`;
+    seriesSelect.parentElement.querySelector('.alert')?.remove();
+    seriesSelect.parentElement.appendChild(errorDiv);
+  }
 
-    if (seriesData.length === 0) {
-      console.log('[syncTmdbCache] No series with tmdbId to sync');
-      return;
-    }
+  async syncTmdbCache(series) {
+    const seriesData = series
+      .filter(item => item.tmdbId)
+      .map(item => ({ tmdbId: item.tmdbId, titleEn: item.title }));
+    if (seriesData.length === 0) return null;
 
     try {
-      console.log('[syncTmdbCache] Syncing', seriesData.length, 'series...');
-      
       const response = await this.apiRequest('/tmdb/cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -843,19 +836,17 @@ setupEventListeners() {
 
       if (!response.ok) throw new Error('TMDB sync failed');
       const data = await response.json();
-      this.tmdbCache = data.cache || {};
-      console.log('[syncTmdbCache] Synced', data.synced, 'new series, cache size:', Object.keys(this.tmdbCache).length);
-      return;
+      return data.cache || {};
     } catch (error) {
-      if (error.status === 401) return;
-      console.warn('[syncTmdbCache] Sync failed, trying to load existing cache');
+      if (error.status === 401) return null;
     }
 
     try {
-      const cacheResponse = await this.apiRequest('/tmdb/cache');
-      this.tmdbCache = await cacheResponse.json();
+      const response = await this.apiRequest('/tmdb/cache');
+      return await response.json();
     } catch (error) {
       console.error('[syncTmdbCache] Cache fallback failed:', error.message);
+      return null;
     }
   }
 

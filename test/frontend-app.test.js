@@ -31,9 +31,16 @@ function cleanupDom(dom) {
   delete global.localStorage;
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
 function makeApp() {
   const app = Object.create(MikanarrApp.prototype);
   app.seriesList = [];
+  app.seriesLoadGeneration = 0;
   app.tmdbCache = {};
   app.tmdbDetails = new Map();
   app.allPatterns = [];
@@ -41,6 +48,48 @@ function makeApp() {
   app.sonarrOptions = { rootFolders: [], qualityProfiles: [] };
   return app;
 }
+
+test('older TMDB refresh cannot replace newer Series options or selection', async () => {
+  const dom = installDom(`
+    <select id="series"><option value="">选择系列...</option></select>
+    <input id="search-input" value="">
+  `);
+  const app = makeApp();
+  const oldRefresh = deferred();
+  const newRefresh = deferred();
+  const responses = [
+    [{ title: 'Old Series', tmdbId: 1 }],
+    [{ title: 'New Series', tmdbId: 2 }]
+  ];
+  let responseIndex = 0;
+  let patternFetches = 0;
+  app.filterPatterns = () => {};
+  app.apiRequest = async url => ({
+    ok: true,
+    status: 200,
+    json: async () => responses[responseIndex++]
+  });
+  app.syncTmdbCache = series => series[0].tmdbId === 1 ? oldRefresh.promise : newRefresh.promise;
+  app.loadPatterns = () => { patternFetches += 1; };
+
+  await app.loadSeries();
+  await app.loadSeries();
+  const select = document.getElementById('series');
+  select.value = 'New Series';
+
+  newRefresh.resolve({ 2: '新名称' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(Array.from(select.options).map(option => option.value), ['', 'New Series']);
+  assert.match(select.options[1].textContent, /新名称/);
+  assert.equal(select.value, 'New Series');
+
+  oldRefresh.resolve({ 1: '旧名称' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(select.options[1].textContent, /新名称/);
+  assert.equal(select.value, 'New Series');
+  assert.equal(patternFetches, 0);
+  cleanupDom(dom);
+});
 
 test('Pattern table renders names and seasons as literal text', () => {
   const dom = installDom(`
@@ -817,8 +866,9 @@ test('TMDB sync failures fall back to the existing cache', async () => {
   const originalWarn = console.warn;
   const originalLog = console.log;
   console.error = console.warn = console.log = () => {};
+  let cache;
   try {
-    await app.syncTmdbCache([{ tmdbId: 42, title: 'Series' }]);
+    cache = await app.syncTmdbCache([{ tmdbId: 42, title: 'Series' }]);
   } finally {
     console.error = originalError;
     console.warn = originalWarn;
@@ -826,7 +876,8 @@ test('TMDB sync failures fall back to the existing cache', async () => {
   }
 
   assert.deepEqual(calls, ['/tmdb/cache/sync', '/tmdb/cache']);
-  assert.deepEqual(app.tmdbCache, { 42: '中文名' });
+  assert.deepEqual(cache, { 42: '中文名' });
+  assert.deepEqual(app.tmdbCache, {});
 });
 
 test('TMDB sync authorization failures do not trigger a second protected request', async () => {
@@ -842,8 +893,9 @@ test('TMDB sync authorization failures do not trigger a second protected request
   const originalWarn = console.warn;
   const originalLog = console.log;
   console.error = console.warn = console.log = () => {};
+  let cache;
   try {
-    await app.syncTmdbCache([{ tmdbId: 42, title: 'Series' }]);
+    cache = await app.syncTmdbCache([{ tmdbId: 42, title: 'Series' }]);
   } finally {
     console.error = originalError;
     console.warn = originalWarn;
@@ -851,6 +903,7 @@ test('TMDB sync authorization failures do not trigger a second protected request
   }
 
   assert.deepEqual(calls, ['/tmdb/cache/sync']);
+  assert.equal(cache, null);
 });
 
 test('filtering renders only the visible view', () => {
@@ -900,8 +953,7 @@ test('Series render immediately while TMDB refresh redraws locally without anoth
   };
   app.syncTmdbCache = () => new Promise(resolve => {
     resolveSync = () => {
-      app.tmdbCache = { 42: '中文名' };
-      resolve();
+      resolve({ 42: '中文名' });
     };
   });
   app.renderSeriesOptions = values => {
