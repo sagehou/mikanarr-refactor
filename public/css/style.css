@@ -144,33 +144,34 @@ body {
 }
 
 .bg-primary {
-  background-color: var(--accent) !important;
-  border-color: var(--accent) !important;
+  background-color: color-mix(in srgb, var(--accent) 70%, var(--text-primary)) !important;
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .bg-secondary {
-  background-color: var(--text-secondary) !important;
-  color: var(--accent-contrast);
+  background-color: color-mix(in srgb, var(--text-secondary) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .bg-success {
-  background-color: var(--success) !important;
-  color: var(--accent-contrast);
+  background-color: color-mix(in srgb, var(--success) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .bg-danger {
-  background-color: var(--danger) !important;
-  color: var(--accent-contrast);
+  background-color: color-mix(in srgb, var(--danger) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .bg-warning {
-  background-color: var(--warning) !important;
-  color: var(--text-primary);
+  background-color: color-mix(in srgb, var(--warning) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .bg-info {
-  background-color: var(--info) !important;
-  color: var(--accent-contrast);
+  background-color: color-mix(in srgb, var(--info) 70%, var(--text-primary)) !important;
+  color: var(--surface-raised);
 }
 
 .app-navbar {
@@ -945,18 +946,18 @@ select:focus {
 }
 
 .pattern-card-status-badge.status-ok {
-  background: color-mix(in srgb, var(--success) 90%, transparent);
-  color: var(--accent-contrast);
+  background: color-mix(in srgb, var(--success) 70%, var(--text-primary));
+  color: var(--surface-raised);
 }
 
 .pattern-card-status-badge.status-warning {
-  background: color-mix(in srgb, var(--warning) 90%, transparent);
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--warning) 70%, var(--text-primary));
+  color: var(--surface-raised);
 }
 
 .pattern-card-status-badge.status-error {
-  background: color-mix(in srgb, var(--danger) 90%, transparent);
-  color: var(--accent-contrast);
+  background: color-mix(in srgb, var(--danger) 70%, var(--text-primary));
+  color: var(--surface-raised);
 }
 
 .pattern-card-body {
