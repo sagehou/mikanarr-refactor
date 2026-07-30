@@ -17,6 +17,7 @@ class MikanarrApp {
     this.tmdbDetails = new Map();
     this.authExpired = false;
     this.debounceTimer = null;
+    this.patternLoadError = null;
     
     if (autoInit) this.init();
   }
@@ -535,6 +536,7 @@ setupEventListeners() {
   }
 
   async loadPatterns() {
+    this.patternLoadError = null;
     // Show skeleton loading
     this.showSkeletonLoading();
     
@@ -554,11 +556,13 @@ setupEventListeners() {
       } else {
         this.allPatterns = patterns;
       }
-      
+
+      this.patternLoadError = null;
       this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
     } catch (error) {
       console.error('Failed to load patterns:', error);
+      this.patternLoadError = '无法加载 Patterns，请检查连接后重试';
       this.allPatterns = [];
       this.filteredPatterns = [];
       this.updatePatternSummary();
@@ -2484,8 +2488,33 @@ setupEventListeners() {
   }
 
   renderCurrentView(patterns = this.filteredPatterns || this.allPatterns || []) {
+    if (this.patternLoadError) {
+      this.renderPatternLoadError();
+      return;
+    }
     if (this.currentView === 'card') this.renderPatternCards(patterns);
     else this.renderPatterns(patterns);
+  }
+
+  renderPatternLoadError() {
+    const state = document.createElement('div');
+    state.className = 'load-error-state';
+    state.innerHTML = '<i class="bi bi-cloud-slash" aria-hidden="true"></i><h2>加载失败</h2><p></p><button type="button" class="btn btn-primary retry-pattern-load"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>重试</button>';
+    state.querySelector('p').textContent = this.patternLoadError;
+    state.querySelector('.retry-pattern-load').addEventListener('click', () => this.loadPatterns());
+    const cards = document.getElementById('pattern-card-view');
+    const tbody = document.getElementById('pattern-table-body');
+    cards.replaceChildren();
+    tbody.replaceChildren();
+    if (this.currentView === 'card') cards.appendChild(state);
+    else {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 10;
+      cell.appendChild(state);
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    }
   }
 
   handleSortClick(th) {

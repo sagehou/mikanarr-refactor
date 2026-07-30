@@ -41,6 +41,25 @@ test('Pattern workspace groups summary discovery and data actions', () => {
   dom.window.close();
 });
 
+test('Pattern editor groups four workflows and a responsive preview', () => {
+  const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+  const sections = Array.from(document.querySelectorAll('#pattern-form > .editor-section'));
+  assert.deepEqual(sections.map(section => section.dataset.section), ['source', 'matching', 'mapping', 'output']);
+  assert.deepEqual(sections.map(section => Array.from(section.querySelectorAll('input, select, textarea'), field => field.id)), [
+    ['mikan-import', 'remote'],
+    ['pattern'],
+    ['series', 'season'],
+    ['language', 'quality', 'offset', 'releasegroup', 'proxy-url']
+  ]);
+  for (const section of sections) assert.ok(document.getElementById(section.getAttribute('aria-labelledby')));
+  assert.ok(document.querySelector('.editor-preview-panel #rss-preview'));
+  assert.ok(document.querySelector('.editor-actions #save-btn'));
+  assert.equal(document.querySelector('.editor-preview-panel').hasAttribute('style'), false);
+  dom.window.close();
+});
+
 function installDom(body) {
   const dom = new JSDOM(`<!doctype html><body>${body}</body>`, {
     url: 'https://mikanarr.test/'
@@ -221,6 +240,79 @@ test('empty library and filtered-empty results use distinct states', () => {
   document.getElementById('filter-status').value = 'not-found';
   app.renderPatterns([]);
   assert.ok(document.querySelector('.empty-state.empty-state--filtered'));
+  cleanupDom(dom);
+});
+
+test('Pattern load failure is distinct and retries the request', () => {
+  const dom = installDom(`
+    <input id="search-input" value="">
+    <select id="filter-status"><option value="all" selected>all</option></select>
+    <div id="pattern-card-view"></div>
+    <div id="pattern-table-view"><table><tbody id="pattern-table-body"></tbody></table></div>
+  `);
+  const app = makeApp();
+  app.currentView = 'card';
+  app.patternLoadError = '无法加载 Patterns';
+  let retries = 0;
+  app.loadPatterns = () => { retries += 1; };
+  app.renderCurrentView([]);
+  const state = document.querySelector('.load-error-state');
+  assert.ok(state);
+  assert.match(state.textContent, /无法加载 Patterns/);
+  state.querySelector('.retry-pattern-load').click();
+  assert.equal(retries, 1);
+  cleanupDom(dom);
+});
+
+test('newer successful Pattern load replaces an older failure state', async () => {
+  const dom = installDom(`
+    <span id="pattern-total-count"></span><span id="pattern-issue-count"></span>
+    <span id="pattern-summary-selected"></span><span id="selected-count"></span>
+    <div id="batch-actions" class="d-none"></div>
+    <button id="batch-delete-btn" class="d-none"></button><button id="batch-fix-btn" class="d-none"></button>
+    <input id="select-all" type="checkbox"><input id="search-input" value="">
+    <select id="filter-status"><option value="all" selected>all</option></select>
+    <div id="pattern-card-view"></div>
+    <table><tbody id="pattern-table-body"></tbody></table>
+  `);
+  const app = makeApp();
+  const older = deferred();
+  const newer = deferred();
+  const requests = [older, newer];
+  let requestIndex = 0;
+  app.currentView = 'card';
+  app.showSkeletonLoading = () => {};
+  app.updateSortIndicators = () => {};
+  app.apiRequest = async () => requests[requestIndex++].promise;
+
+  const olderLoad = app.loadPatterns();
+  const newerLoad = app.loadPatterns();
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    older.resolve({ ok: false, status: 503 });
+    await olderLoad;
+    newer.resolve({
+      ok: true,
+      json: async () => [{
+        id: 1,
+        series: 'Recovered',
+        season: '01',
+        pattern: 'pattern',
+        language: 'Chinese',
+        quality: 'WEBDL',
+        releasegroup: '',
+        remote: ''
+      }]
+    });
+    await newerLoad;
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(app.patternLoadError, null);
+  assert.equal(document.querySelectorAll('.pattern-card').length, 1);
+  assert.equal(document.querySelector('.load-error-state'), null);
   cleanupDom(dom);
 });
 
@@ -809,7 +901,7 @@ test('Pattern reload reconciles selection and clears the active view after failu
     total: document.getElementById('pattern-total-count').textContent,
     issues: document.getElementById('pattern-issue-count').textContent,
     cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length,
-    cardEmpty: Boolean(document.querySelector('.pattern-card-empty.empty-state--library')),
+    loadError: Boolean(document.querySelector('#pattern-card-view > .load-error-state')),
     toast: document.querySelector('.toast-error .toast-content')?.textContent
   };
 
@@ -821,7 +913,7 @@ test('Pattern reload reconciles selection and clears the active view after failu
       total: '0',
       issues: '0',
       cardSkeletons: 0,
-      cardEmpty: true,
+      loadError: true,
       toast: '加载 Patterns 失败'
     }
   });

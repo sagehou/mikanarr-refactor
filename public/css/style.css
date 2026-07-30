@@ -838,6 +838,25 @@ select:focus {
   cursor: pointer;
 }
 
+/* ===== Pattern Editor ===== */
+.editor-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 16px; }
+.editor-heading h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 1.9rem); }
+.editor-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.editor-main { min-width: 0; }
+.editor-section { margin-bottom: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-raised); box-shadow: var(--shadow-rest); }
+.editor-section-heading { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+.editor-section-heading h2 { margin: 0; font-size: 1rem; }
+.editor-section-heading p { margin: 2px 0 0; color: var(--text-muted); font-size: .82rem; }
+.editor-section-index { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-subtle); color: var(--accent); font-size: .72rem; font-weight: 800; }
+.editor-preview-panel { position: sticky; top: 82px; min-width: 0; }
+.editor-preview-card { max-height: calc(100vh - 104px); }
+.editor-preview-card .rss-preview { max-height: calc(100vh - 188px); }
+.editor-actions { position: sticky; bottom: 8px; z-index: 4; display: flex; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); backdrop-filter: blur(12px); }
+.editor-actions .btn { min-height: 40px; }
+.load-error-state { min-height: 240px; display: grid; justify-items: center; align-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--text-secondary); }
+.load-error-state > i { color: var(--danger); font-size: 2rem; }
+.load-error-state h2, .load-error-state p { margin: 0; }
+
 /* ===== Pattern Card Grid View ===== */
 .pattern-page-heading,
 .pattern-toolbar,
