@@ -758,6 +758,76 @@ test('card checkboxes drive batch selection in card view', () => {
   cleanupDom(dom);
 });
 
+test('Pattern reload reconciles selection and clears the active view after failure', async () => {
+  const dom = installDom(`
+    <span id="pattern-total-count">2</span><span id="pattern-issue-count">1</span>
+    <span id="pattern-summary-selected">1</span><span id="selected-count">1</span>
+    <div id="batch-actions"><button id="batch-delete-btn"></button><button id="batch-fix-btn"></button></div>
+    <input id="select-all" type="checkbox" checked>
+    <input id="search-input" value="">
+    <select id="filter-status"><option value="all" selected>all</option></select>
+    <div id="pattern-card-view"><input class="card-checkbox" data-id="1" type="checkbox" checked></div>
+    <table><tbody id="pattern-table-body"><tr><td>stale</td></tr></tbody></table>
+  `);
+  const app = makeApp();
+  const request = deferred();
+  const stalePatterns = [{
+    id: 1,
+    series: 'Missing',
+    season: '01',
+    pattern: 'pattern',
+    language: 'Chinese',
+    quality: 'WEBDL',
+    releasegroup: '',
+    remote: ''
+  }];
+  app.currentView = 'card';
+  app.allPatterns = stalePatterns;
+  app.filteredPatterns = stalePatterns;
+  app.apiRequest = async () => request.promise;
+
+  const loading = app.loadPatterns();
+  const duringLoading = {
+    selected: document.getElementById('pattern-summary-selected').textContent,
+    batchHidden: document.getElementById('batch-actions').classList.contains('d-none'),
+    selectAll: document.getElementById('select-all').checked,
+    cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length
+  };
+
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    request.resolve({ ok: false, status: 503 });
+    await loading;
+  } finally {
+    console.error = originalError;
+  }
+
+  const afterFailure = {
+    allPatterns: app.allPatterns,
+    filteredPatterns: app.filteredPatterns,
+    total: document.getElementById('pattern-total-count').textContent,
+    issues: document.getElementById('pattern-issue-count').textContent,
+    cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length,
+    cardEmpty: Boolean(document.querySelector('.pattern-card-empty.empty-state--library')),
+    toast: document.querySelector('.toast-error .toast-content')?.textContent
+  };
+
+  assert.deepEqual({ duringLoading, afterFailure }, {
+    duringLoading: { selected: '0', batchHidden: true, selectAll: false, cardSkeletons: 6 },
+    afterFailure: {
+      allPatterns: [],
+      filteredPatterns: [],
+      total: '0',
+      issues: '0',
+      cardSkeletons: 0,
+      cardEmpty: true,
+      toast: '加载 Patterns 失败'
+    }
+  });
+  cleanupDom(dom);
+});
+
 test('last_matched_at sort is forwarded to the Pattern request', async () => {
   const dom = installDom('<input id="search-input" value="">');
   const app = makeApp();

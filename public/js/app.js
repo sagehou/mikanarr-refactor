@@ -560,7 +560,9 @@ setupEventListeners() {
     } catch (error) {
       console.error('Failed to load patterns:', error);
       this.allPatterns = [];
-      this.renderPatterns([]);
+      this.filteredPatterns = [];
+      this.updatePatternSummary();
+      this.renderCurrentView([]);
       Toast.error('加载 Patterns 失败');
     }
   }
@@ -588,6 +590,7 @@ setupEventListeners() {
 
     // Card skeleton
     this.showCardSkeletonLoading();
+    this.updateBatchUI();
   }
 
   // 当前排序状态
