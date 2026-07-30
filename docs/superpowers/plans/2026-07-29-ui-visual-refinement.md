@@ -16,7 +16,7 @@
 - Keep compact card view as the default and retain card/table and light/dark preferences in `localStorage`.
 - Dynamic caller/upstream strings continue to use `textContent`, property setters, or validated URL setters; add no inline event handlers or unsafe dynamic `innerHTML`.
 - Use only the approved semantic Maillard colors and motion timings; keep both themes readable.
-- Every behavior change follows RED → GREEN → REFACTOR using Node `node:test`; record the expected failing assertion before production edits.
+- Every JavaScript/DOM behavior change follows RED → GREEN → REFACTOR using Node `node:test`; pure CSS visual rules use an implementation-time RED/GREEN static acceptance check and do not add source-text change-detector tests (user ruling, 2026-07-30).
 - Every task ends with focused tests, `npm run check`, `git diff --check`, self-review, and one commit.
 - Respect `prefers-reduced-motion`; animation must never delay data, focus, controls, or content.
 - Docker runtime verification remains deferred to a later Docker-capable environment.
@@ -27,7 +27,7 @@
 - `public/css/style.css`: colors, density, layout, responsive behavior, dark theme, state presentation, and motion.
 - `public/js/app.js`: Series generation state, summary values, status classes, and loading/error orchestration.
 - `public/js/ui.js`: unchanged safe Toast/Confirm builders; their appearance remains CSS-owned.
-- `test/frontend-app.test.js`: Series concurrency, HTML/CSS contracts, list/editor state behavior, and responsive/motion hooks.
+- `test/frontend-app.test.js`: Series concurrency, semantic HTML structure, and list/editor state behavior; pure CSS is verified statically during implementation rather than by persisted source-text assertions.
 
 ## Cross-Task Interfaces
 
@@ -271,29 +271,22 @@ git commit -m "fix: ignore stale TMDB Series refreshes"
 - Consumes: existing login/main/nav IDs and Bootstrap `d-none`.
 - Produces: approved semantic tokens plus `.login-shell`, `.app-shell`, `.app-navbar`, `.app-content`.
 
-- [ ] **Step 1: Write shell/token contract tests**
+- [ ] **Step 1: Write the semantic shell behavior test**
 
 Add `readFileSync` from `node:fs` and `join` from `node:path`, then:
 
 ```js
-test('refined Maillard shell exposes one tokenized light and dark foundation', () => {
+test('refined application shell preserves semantic login and navigation structure', () => {
   const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
-  const css = readFileSync(join(__dirname, '../public/css/style.css'), 'utf8');
   const dom = new JSDOM(html);
   const document = dom.window.document;
   assert.ok(document.getElementById('login-container').classList.contains('login-shell'));
+  assert.equal(document.querySelector('#login-container > .login-ambient').getAttribute('aria-hidden'), 'true');
   assert.ok(document.getElementById('main-container').classList.contains('app-shell'));
   assert.ok(document.querySelector('nav').classList.contains('app-navbar'));
   assert.ok(document.querySelector('#main-container > .app-content'));
   assert.equal(document.querySelector('#oidc-login-container > .login-divider').textContent.trim(), '或');
   assert.equal(document.querySelector('meta[name="theme-color"]').content, '#a86f4c');
-  for (const value of ['--surface-canvas: #f6f1e9', '--surface-raised: #fffdf9', '--text-primary: #382d27', '--accent: #a86f4c', '--motion-fast: 160ms', '--motion-view: 240ms']) {
-    assert.ok(css.includes(value), value);
-  }
-  assert.match(css, /\[data-theme="dark"\][\s\S]*--surface-canvas: #1f1915/);
-  assert.equal((css.match(/^\.login-box\s*\{/gm) || []).length, 1);
-  assert.equal((css.match(/^\.navbar-brand\s*\{/gm) || []).length, 1);
-  assert.equal((css.match(/^\.btn\s*\{/gm) || []).length, 1);
   dom.window.close();
 });
 ```
@@ -301,10 +294,10 @@ test('refined Maillard shell exposes one tokenized light and dark foundation', (
 - [ ] **Step 2: Verify RED**
 
 ```bash
-node --test --test-name-pattern='refined Maillard shell' test/frontend-app.test.js
+node --test --test-name-pattern='refined application shell' test/frontend-app.test.js
 ```
 
-Expected: FAIL because shell hooks/tokens are absent and base selectors are duplicated.
+Expected: FAIL because the semantic shell, ambient layer, login divider, and approved theme-color hook are absent.
 
 - [ ] **Step 3: Add semantic shell hooks without changing IDs**
 
@@ -401,7 +394,17 @@ Update `<meta name="theme-color">` from `#b07d62` to the approved light accent `
 - [ ] **Step 5: Verify GREEN and commit**
 
 ```bash
-node --test --test-name-pattern='refined Maillard shell|HTML pins CDN|browser responses' test/frontend-app.test.js
+node --test --test-name-pattern='refined application shell|HTML pins CDN|browser responses' test/frontend-app.test.js
+node - <<'NODE'
+const css = require('node:fs').readFileSync('public/css/style.css', 'utf8');
+for (const value of ['--surface-canvas: #f6f1e9', '--surface-raised: #fffdf9', '--text-primary: #382d27', '--accent: #a86f4c', '--motion-fast: 160ms', '--motion-view: 240ms', '--surface-canvas: #1f1915']) {
+  if (!css.includes(value)) throw new Error(`missing CSS token: ${value}`);
+}
+for (const selector of ['login-box', 'navbar-brand', 'btn']) {
+  const count = (css.match(new RegExp(`^\\.${selector}\\s*\\{`, 'gm')) || []).length;
+  if (count !== 1) throw new Error(`expected one base .${selector} block, found ${count}`);
+}
+NODE
 npm run check
 git diff --check
 git add public/index.html public/css/style.css test/frontend-app.test.js
@@ -913,40 +916,56 @@ git commit -m "style: restructure Pattern editor states"
 
 **Files:**
 - Modify: `public/css/style.css`
-- Modify: `test/frontend-app.test.js`
 
 **Interfaces:**
 - Consumes: Task 2 tokens/shell hooks, Task 3 workspace/card hooks, Task 4 editor/state hooks, and existing `.toast-item`, `.confirm-overlay`, `.confirm-dialog`, `.modal-content`, and `.table-responsive` components.
 - Produces: CSS-only responsive behavior at 991.98 px, 767.98 px, and 575.98 px; hover-capability rules; `prefers-reduced-motion` behavior; and `app-enter`, `card-enter`, `batch-actions-in`, `toast-enter`, `dialog-overlay-in`, `dialog-enter`, and `skeleton-shimmer` keyframes.
 
-- [ ] **Step 1: Write responsive, motion, and theme contract tests**
+- [ ] **Step 1: Define the one-time CSS acceptance check**
 
-Add:
+Use this implementation-time check; it is deliberately not added to `node:test` because it validates stylesheet source contracts rather than user-visible JavaScript/DOM behavior:
 
-```js
-test('responsive motion and dual-theme contracts cover compact UI states', () => {
-  const css = readFileSync(join(__dirname, '../public/css/style.css'), 'utf8');
-  for (const keyframe of ['app-enter', 'card-enter', 'batch-actions-in', 'toast-enter', 'dialog-overlay-in', 'dialog-enter', 'skeleton-shimmer']) {
-    assert.ok(css.includes(`@keyframes ${keyframe}`), keyframe);
-  }
-  assert.match(css, /@media \(max-width: 991\.98px\)[\s\S]*\.editor-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
-  assert.match(css, /@media \(max-width: 575\.98px\)[\s\S]*\.search-control[\s\S]*width:\s*100%/);
-  assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.pattern-card:hover/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration:\s*0\.01ms\s*!important/);
-  assert.match(css, /\[data-theme="dark"\]\s+\.modal-content/);
-  assert.match(css, /\.table-responsive[\s\S]*overscroll-behavior-inline:\s*contain/);
-  assert.match(css, /\.table thead th[\s\S]*position:\s*sticky/);
-  assert.doesNotMatch(css, /@media \(max-width: 576px\)[\s\S]*minmax\(140px, 1fr\)/);
-});
+```bash
+node - <<'NODE'
+const css = require('node:fs').readFileSync('public/css/style.css', 'utf8');
+const requirements = [
+  ...['app-enter', 'card-enter', 'batch-actions-in', 'toast-enter', 'dialog-overlay-in', 'dialog-enter', 'skeleton-shimmer'].map(name => `@keyframes ${name}`),
+  '@media (max-width: 991.98px)',
+  '@media (max-width: 575.98px)',
+  '@media (hover: hover) and (pointer: fine)',
+  '@media (prefers-reduced-motion: reduce)',
+  'overscroll-behavior-inline: contain',
+  'position: sticky'
+];
+const missing = requirements.filter(value => !css.includes(value));
+if (missing.length) throw new Error(`missing CSS contracts: ${missing.join(', ')}`);
+if (css.includes('minmax(140px, 1fr)')) throw new Error('legacy 140px mobile card grid remains');
+NODE
 ```
 
 - [ ] **Step 2: Verify RED**
 
+Run against the pre-change stylesheet:
+
 ```bash
-node --test --test-name-pattern='responsive motion and dual-theme' test/frontend-app.test.js
+node - <<'NODE'
+const css = require('node:fs').readFileSync('public/css/style.css', 'utf8');
+const requirements = [
+  ...['app-enter', 'card-enter', 'batch-actions-in', 'toast-enter', 'dialog-overlay-in', 'dialog-enter', 'skeleton-shimmer'].map(name => `@keyframes ${name}`),
+  '@media (max-width: 991.98px)',
+  '@media (max-width: 575.98px)',
+  '@media (hover: hover) and (pointer: fine)',
+  '@media (prefers-reduced-motion: reduce)',
+  'overscroll-behavior-inline: contain',
+  'position: sticky'
+];
+const missing = requirements.filter(value => !css.includes(value));
+if (missing.length) throw new Error(`missing CSS contracts: ${missing.join(', ')}`);
+if (css.includes('minmax(140px, 1fr)')) throw new Error('legacy 140px mobile card grid remains');
+NODE
 ```
 
-Expected: FAIL because the final keyframes, capability query, reduced-motion override, editor breakpoint, and sticky-table contracts are not all present.
+Expected: exit 1 listing the missing final keyframes, capability query, reduced-motion override, editor breakpoint, and sticky-table contracts.
 
 - [ ] **Step 3: Add visible motion with a non-animated fallback**
 
@@ -1156,7 +1175,22 @@ Consolidate superseded hard-coded `.bg-*`, dark table/card, text-muted, form-con
 - [ ] **Step 6: Verify focused contracts, full gates, and commit**
 
 ```bash
-node --test --test-name-pattern='responsive motion and dual-theme|refined Maillard shell|Pattern workspace|Pattern editor groups' test/frontend-app.test.js
+node - <<'NODE'
+const css = require('node:fs').readFileSync('public/css/style.css', 'utf8');
+const requirements = [
+  ...['app-enter', 'card-enter', 'batch-actions-in', 'toast-enter', 'dialog-overlay-in', 'dialog-enter', 'skeleton-shimmer'].map(name => `@keyframes ${name}`),
+  '@media (max-width: 991.98px)',
+  '@media (max-width: 575.98px)',
+  '@media (hover: hover) and (pointer: fine)',
+  '@media (prefers-reduced-motion: reduce)',
+  'overscroll-behavior-inline: contain',
+  'position: sticky'
+];
+const missing = requirements.filter(value => !css.includes(value));
+if (missing.length) throw new Error(`missing CSS contracts: ${missing.join(', ')}`);
+if (css.includes('minmax(140px, 1fr)')) throw new Error('legacy 140px mobile card grid remains');
+NODE
+node --test --test-name-pattern='refined application shell|Pattern workspace|Pattern editor groups' test/frontend-app.test.js
 npm run check
 npm audit --omit=dev --audit-level=high
 git diff --check
@@ -1195,7 +1229,7 @@ NODE
 Expected: exit 0 with no output.
 
 ```bash
-git add public/css/style.css test/frontend-app.test.js
+git add public/css/style.css
 git commit -m "style: finish responsive Maillard interactions"
 ```
 
