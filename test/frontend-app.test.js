@@ -1456,6 +1456,7 @@ test('browser responses set the restrictive security headers', async t => {
 
   const response = await fetch(`${fixture.baseUrl}/`);
 
+  assert.equal(response.headers.get('x-powered-by'), null);
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(response.headers.get('content-security-policy'), [

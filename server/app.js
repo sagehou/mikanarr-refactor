@@ -12,6 +12,7 @@ const { createImageProxyRouter } = require('./routes/imageProxy');
 
 function createApp({ config, database, oidcProvider, oidcProviderFactory, httpClient = axios, logger = console, clock = Date.now }) {
   const app = express();
+  app.disable('x-powered-by');
   if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops);
   const sessionManager = createSessionManager({ config, clock });
   const authRouter = createAuthRouter({ config, oidcProvider, oidcProviderFactory, httpClient, logger, clock, sessionManager });
