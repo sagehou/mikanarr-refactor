@@ -13,14 +13,14 @@ function createTestDatabase() {
   return { database, dataDir, close() { database.close(); rmSync(dataDir, { recursive: true, force: true }); } };
 }
 
-async function createAppFixture({ oidcOnly = false, env: overrides = {}, oidcProvider, oidcProviderFactory, clock, logger = { log() {}, warn() {}, error() {} } } = {}) {
+async function createAppFixture({ oidcOnly = false, env: overrides = {}, oidcProvider, oidcProviderFactory, clock, authFailureCapacity, logger = { log() {}, warn() {}, error() {} } } = {}) {
   const fixture = createTestDatabase();
   const defaults = oidcOnly
     ? { NODE_ENV: 'test', DATA_DIR: fixture.dataDir, OIDC_ISSUER: 'http://localhost:8080', OIDC_CLIENT_ID: 'client', OIDC_CLIENT_SECRET: 'secret', OIDC_REDIRECT_URI: 'http://localhost:12306/auth/oidc/callback', OIDC_ALLOWED_SUBJECTS: 'subject' }
     : { NODE_ENV: 'test', DATA_DIR: fixture.dataDir, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'secret' };
   const env = { ...defaults, ...overrides };
   const config = loadConfig(env);
-  const app = createApp({ config, database: fixture.database, oidcProvider, oidcProviderFactory, clock, logger });
+  const app = createApp({ config, database: fixture.database, oidcProvider, oidcProviderFactory, clock, authFailureCapacity, logger });
   const http = await listen(app);
   return { ...fixture, ...http, app, config, async close() { await new Promise(resolve => http.server.close(resolve)); fixture.close(); } };
 }

@@ -76,6 +76,18 @@ test('overwrite resets IDs and returns the final row count', t => {
   ]);
 });
 
+test('append rolls back every row when a later insert fails', t => {
+  const db = createTestDatabase(t);
+  db.createPattern(validPattern({ series: 'Existing' }));
+
+  assert.throws(() => db.appendPatterns([
+    validPattern({ series: 'Would be partial' }),
+    validPattern({ series: null })
+  ]));
+
+  assert.deepEqual(db.getPatterns().map(row => row.series), ['Existing']);
+});
+
 test('increments each Pattern match count by its aggregated request total', t => {
   const db = createTestDatabase(t);
   const first = db.createPattern(validPattern({ series: 'First' }));

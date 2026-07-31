@@ -34,6 +34,21 @@ test('accepts only a small explicit reverse-proxy hop count', () => {
   }
 });
 
+test('loads only a bounded shared HTTP timeout', () => {
+  const env = {
+    NODE_ENV: 'test', DATA_DIR: '/tmp/mikanarr-test',
+    ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'secret'
+  };
+  assert.equal(loadConfig({ ...env, HTTP_TIMEOUT_MS: '4321' }).http.timeoutMs, 4321);
+  for (const value of ['999', '60001', 'invalid']) {
+    assert.throws(
+      () => loadConfig({ ...env, HTTP_TIMEOUT_MS: value }),
+      error => error instanceof ConfigError && error.code === 'INVALID_CONFIG',
+      value
+    );
+  }
+});
+
 test('freezes nested authorization policy', () => {
   const config = loadConfig({
     NODE_ENV: 'test', DATA_DIR: '/tmp/mikanarr-test',

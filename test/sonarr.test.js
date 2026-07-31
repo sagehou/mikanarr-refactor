@@ -11,6 +11,7 @@ test('Sonarr proxy wires production TLS verification through the v3 event API', 
   let options;
   createSonarrRouter({
     config: {
+      http: { timeoutMs: 4321 },
       sonarr: {
         host: 'https://sonarr.example', apiKey: 'sonarr-secret', tlsInsecure: false
       }
@@ -24,6 +25,8 @@ test('Sonarr proxy wires production TLS verification through the v3 event API', 
   });
 
   assert.equal(options.secure, true);
+  assert.equal(options.timeout, 4321);
+  assert.equal(options.proxyTimeout, 4321);
   assert.equal(typeof options.on.proxyReq, 'function');
   assert.equal(typeof options.on.error, 'function');
 });

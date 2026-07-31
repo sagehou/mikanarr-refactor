@@ -63,6 +63,10 @@ function createDatabase({ dataDir }) {
     for (const pattern of patterns) statements.createPattern.run(pattern);
     return statements.countPatterns.get().count;
   });
+  const appendPatterns = raw.transaction(patterns => {
+    for (const pattern of patterns) statements.createPattern.run(pattern);
+    return statements.countPatterns.get().count;
+  });
   const incrementMatchCounts = raw.transaction(counts => {
     for (const [id, count] of counts) statements.incrementMatchCount.run(count, id);
   });
@@ -80,6 +84,7 @@ function createDatabase({ dataDir }) {
       return statements.getPattern.get(id);
     },
     deletePattern: id => statements.deletePattern.run(id).changes,
+    appendPatterns,
     overwritePatterns,
     getTmdbCache: () => statements.getTmdbCache.all(),
     getTmdbCacheByIds(ids) {

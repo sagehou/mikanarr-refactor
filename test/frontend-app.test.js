@@ -7,6 +7,7 @@ const { createAppFixture } = require('./helpers/fixtures');
 
 const { MikanarrApp } = require('../public/js/app');
 const { createClient } = require('../public/js/api');
+const { Toast, ConfirmDialog } = require('../public/js/ui');
 
 const payload = '<img src=x onerror="globalThis.pwned=1">';
 
@@ -95,6 +96,7 @@ function installFullDom() {
 
 function cleanupDom(dom) {
   dom.window.close();
+  Toast.container = null;
   delete global.window;
   delete global.document;
   delete global.navigator;
@@ -105,14 +107,21 @@ function cleanupDom(dom) {
 
 function deferred() {
   let resolve;
-  const promise = new Promise(done => { resolve = done; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }
 
 function makeApp() {
   const app = Object.create(MikanarrApp.prototype);
   app.seriesList = [];
   app.seriesLoadGeneration = 0;
+  app.seriesSearchGeneration = 0;
+  app.seriesInfoGeneration = 0;
+  app.rssLoadGeneration = 0;
   app.patternLoadGeneration = 0;
   app.patternLoadingGeneration = null;
   app.tmdbCache = {};
@@ -168,6 +177,57 @@ test('saving a Pattern returns focus to the persistent search control', async ()
 
   assert.equal(document.activeElement, document.getElementById('search-input'));
   assert.equal(transientTrigger.isConnected, false);
+  cleanupDom(dom);
+});
+
+test('Escape closes an active dialog without leaving the Pattern editor', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  app.setupKeyboardShortcuts();
+  app.showPatternEdit();
+
+  const dialogResult = ConfirmDialog.show({ title: '删除', message: '确认删除？' });
+  document.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Escape', bubbles: true, cancelable: true
+  }));
+
+  assert.equal(await dialogResult, false);
+  assert.equal(document.getElementById('pattern-edit').classList.contains('d-none'), false);
+  assert.equal(document.getElementById('pattern-list').classList.contains('d-none'), true);
+
+  const bootstrapModal = document.getElementById('add-series-modal');
+  bootstrapModal.classList.add('show');
+  document.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Escape', bubbles: true, cancelable: true
+  }));
+  assert.equal(document.getElementById('pattern-edit').classList.contains('d-none'), false);
+  bootstrapModal.classList.remove('show');
+  bootstrapModal.setAttribute('aria-modal', 'true');
+  document.body.classList.add('modal-open');
+  document.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Escape', bubbles: true, cancelable: true
+  }));
+  assert.equal(document.getElementById('pattern-edit').classList.contains('d-none'), false);
+  cleanupDom(dom);
+});
+
+test('edit-page delete returns to the list only after deletion succeeds', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  app.currentPatternId = 7;
+  app.setupEventListeners();
+  let listTransitions = 0;
+  app.showPatternList = () => { listTransitions += 1; };
+  app.deletePattern = async () => false;
+
+  document.getElementById('edit-delete-btn').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(listTransitions, 0);
+
+  app.deletePattern = async () => true;
+  document.getElementById('edit-delete-btn').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(listTransitions, 1);
   cleanupDom(dom);
 });
 
@@ -240,6 +300,130 @@ test('older TMDB refresh cannot replace newer Series options or selection', asyn
   assert.match(select.options[1].textContent, /新名称/);
   assert.equal(select.value, 'New Series');
   assert.equal(patternFetches, 0);
+  cleanupDom(dom);
+});
+
+test('only the latest RSS preview may publish a success or failure', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const response = title => ({
+    ok: true,
+    text: async () => `<rss><channel><item><title>${title}</title></item></channel></rss>`
+  });
+  app.autoFillSubgroup = () => {};
+  app.findBestMatchSeries = () => null;
+  let queue = [];
+  app.apiRequest = () => queue.shift().promise;
+  const remote = document.getElementById('remote');
+
+  const staleSuccess = deferred();
+  const latestSuccess = deferred();
+  queue = [staleSuccess, latestSuccess];
+  remote.value = 'https://mikanani.me/old';
+  const oldLoad = app.loadRssPreview();
+  remote.value = 'https://mikanani.me/new';
+  const newLoad = app.loadRssPreview();
+  latestSuccess.resolve(response('NEW'));
+  await newLoad;
+  staleSuccess.resolve(response('OLD'));
+  await oldLoad;
+  assert.deepEqual(app.rssItems, ['NEW']);
+  assert.match(document.getElementById('rss-preview').textContent, /NEW/);
+
+  const staleFailure = deferred();
+  const finalSuccess = deferred();
+  queue = [staleFailure, finalSuccess];
+  remote.value = 'https://mikanani.me/stale-error';
+  const failedLoad = app.loadRssPreview();
+  remote.value = 'https://mikanani.me/final';
+  const finalLoad = app.loadRssPreview();
+  finalSuccess.resolve(response('FINAL'));
+  await finalLoad;
+  staleFailure.reject(new Error('stale failure'));
+  await failedLoad;
+  assert.deepEqual(app.rssItems, ['FINAL']);
+  assert.match(document.getElementById('rss-preview').textContent, /FINAL/);
+  cleanupDom(dom);
+});
+
+test('only the latest Sonarr search may publish a success or failure', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  let queue = [];
+  app.apiRequest = () => queue.shift().promise;
+  const search = document.getElementById('sonarr-search-input');
+  const result = title => ({
+    ok: true,
+    json: async () => [{ title, year: 2026, network: 'Test', tvdbId: 0, images: [] }]
+  });
+
+  const staleSuccess = deferred();
+  const latestSuccess = deferred();
+  queue = [staleSuccess, latestSuccess];
+  search.value = 'old';
+  const oldSearch = app.searchSonarrSeries();
+  search.value = 'new';
+  const newSearch = app.searchSonarrSeries();
+  latestSuccess.resolve(result('NEW'));
+  await newSearch;
+  staleSuccess.resolve(result('OLD'));
+  await oldSearch;
+  assert.equal(app.searchResults[0].title, 'NEW');
+  assert.match(document.getElementById('sonarr-search-results').textContent, /NEW/);
+
+  const staleFailure = deferred();
+  const finalSuccess = deferred();
+  queue = [staleFailure, finalSuccess];
+  search.value = 'stale-error';
+  const failedSearch = app.searchSonarrSeries();
+  search.value = 'final';
+  const finalSearch = app.searchSonarrSeries();
+  finalSuccess.resolve(result('FINAL'));
+  await finalSearch;
+  staleFailure.reject(new Error('stale failure'));
+  await failedSearch;
+  assert.equal(app.searchResults[0].title, 'FINAL');
+  assert.match(document.getElementById('sonarr-search-results').textContent, /FINAL/);
+  cleanupDom(dom);
+});
+
+test('only the currently selected Series may update the information card', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const staleSuccess = deferred();
+  const staleFailure = deferred();
+  app.seriesList = [
+    { title: 'Old', tmdbId: 1, images: [], seasons: [] },
+    { title: 'New', tmdbId: 2, images: [], seasons: [] },
+    { title: 'Failing', tmdbId: 3, images: [{ coverType: 'poster', remoteUrl: 'https://img.test/failing.jpg' }], seasons: [] },
+    { title: 'Final', tmdbId: 4, images: [], seasons: [] }
+  ];
+  app.tmdbCache = { 1: '旧', 2: '新', 3: '失败', 4: '最终' };
+  app.renderSeriesOptions(app.seriesList);
+  app.getTmdbDetails = id => {
+    if (id === 1) return staleSuccess.promise;
+    if (id === 3) return staleFailure.promise;
+    return Promise.resolve({ poster_path: `/${id}.jpg` });
+  };
+  const select = document.getElementById('series');
+
+  select.value = 'Old';
+  const oldUpdate = app.updateSeriesInfoCard();
+  select.value = 'New';
+  await app.updateSeriesInfoCard();
+  staleSuccess.resolve({ poster_path: '/1.jpg' });
+  await oldUpdate;
+  assert.equal(document.getElementById('series-title-zh').textContent, '新');
+  assert.match(document.getElementById('series-poster').src, /2\.jpg/);
+
+  select.value = 'Failing';
+  const failedUpdate = app.updateSeriesInfoCard();
+  select.value = 'Final';
+  await app.updateSeriesInfoCard();
+  staleFailure.reject(new Error('stale failure'));
+  await failedUpdate;
+  assert.equal(document.getElementById('series-title-zh').textContent, '最终');
+  assert.match(document.getElementById('series-poster').src, /4\.jpg/);
   cleanupDom(dom);
 });
 
@@ -680,6 +864,82 @@ test('Sonarr results and options render caller-controlled fields as literal text
   assert.equal(document.querySelector('#sonarr-quality-profile option').textContent, payload);
 
   cleanupDom(dom);
+});
+
+test('dynamic Pattern selection and RSS controls expose names and keyboard operation', () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const pattern = {
+    id: 9,
+    series: 'Keyboard Series',
+    season: '1',
+    pattern: '(?<episode>\\d+)',
+    language: 'Chinese',
+    quality: 'WEBDL',
+    releasegroup: '',
+    remote: ''
+  };
+  app.renderPatterns([pattern]);
+  app.renderPatternCards([pattern]);
+
+  assert.match(document.querySelector('.row-checkbox').getAttribute('aria-label'), /Keyboard Series/);
+  assert.match(document.querySelector('.card-checkbox').getAttribute('aria-label'), /Keyboard Series/);
+
+  app.rssItems = ['Episode 01'];
+  app.renderRssPreview();
+  const rssItem = document.querySelector('.rss-item');
+  assert.equal(rssItem.tagName, 'BUTTON');
+  rssItem.focus();
+  rssItem.click();
+  assert.equal(document.getElementById('pattern').value, 'Episode 01');
+  cleanupDom(dom);
+});
+
+test('Add Series step change moves focus into the newly revealed form', () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  app.searchResults = [{ title: 'Series', year: 2026, tvdbId: 42 }];
+
+  app.selectSeriesToAdd(0);
+
+  assert.equal(document.activeElement, document.getElementById('sonarr-root-folder'));
+  assert.equal(document.getElementById('add-series-step-1').classList.contains('d-none'), true);
+  assert.equal(document.getElementById('add-series-step-2').classList.contains('d-none'), false);
+  cleanupDom(dom);
+});
+
+test('clipboard success is announced only after the write resolves', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const write = deferred();
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: () => write.promise }
+  });
+  const originalSuccess = Toast.success;
+  const originalError = Toast.error;
+  const notices = [];
+  Toast.success = message => notices.push(['success', message]);
+  Toast.error = message => notices.push(['error', message]);
+  document.getElementById('proxy-url').value = 'https://mikanarr.test/RSS/feed';
+  try {
+    const copying = app.copyProxyUrl();
+    assert.deepEqual(notices, []);
+    write.resolve();
+    await copying;
+    assert.deepEqual(notices, [['success', 'Proxy URL 已复制到剪贴板']]);
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => { throw new Error('denied'); } }
+    });
+    await app.copyProxyUrl();
+    assert.equal(notices.at(-1)[0], 'error');
+  } finally {
+    Toast.success = originalSuccess;
+    Toast.error = originalError;
+    cleanupDom(dom);
+  }
 });
 
 test('Add Series reuses one registered Bootstrap modal through submit and dismiss', async () => {
@@ -1620,6 +1880,19 @@ test('HTML pins CDN assets without inline script handlers and names icon control
   assert.equal(document.querySelector('[onclick], [onerror]'), null);
   assert.equal(document.querySelector('script:not([src])'), null);
 
+  const addSeriesModal = document.getElementById('add-series-modal');
+  assert.equal(addSeriesModal.getAttribute('aria-labelledby'), 'add-series-modal-title');
+  assert.equal(document.getElementById('add-series-modal-title').textContent.trim(), '添加到 Sonarr');
+  for (const id of [
+    'sonarr-search-input',
+    'sonarr-root-folder',
+    'sonarr-quality-profile',
+    'sonarr-series-type',
+    'sonarr-monitor'
+  ]) {
+    assert.ok(document.querySelector(`label[for="${id}"]`), `${id} has an associated label`);
+  }
+
   const importButton = document.getElementById('import-btn');
   assert.ok(importButton);
   assert.equal(importButton.tagName, 'BUTTON');
@@ -1637,4 +1910,10 @@ test('HTML pins CDN assets without inline script handlers and names icon control
     .filter(control => !control.getAttribute('aria-label'));
   assert.deepEqual(unnamedIconControls, []);
   dom.window.close();
+});
+
+test('browser application does not invoke native alert or confirm dialogs', () => {
+  const source = readFileSync(join(__dirname, '../public/js/app.js'), 'utf8');
+  assert.doesNotMatch(source, /\balert\s*\(/);
+  assert.doesNotMatch(source, /\bconfirm\s*\(/);
 });

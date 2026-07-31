@@ -14,9 +14,17 @@ docker compose pull
 docker compose up -d --wait
 ```
 
-The image is `ghcr.io/sagehou/mikanarr-refactor:latest` unless `IMAGE_NAME` is set. Compose stores SQLite and generated session-signing keys in the named `mikanarr-data` volume mounted at `/app/data`. The volume is initialized for the non-root application user; there is no host `data/` directory to create for a new deployment.
+The image is `ghcr.io/sagehou/mikanarr-refactor:latest` unless `IMAGE_NAME` is set. For a production deployment, set `IMAGE_NAME` in `.env` to an existing release or commit-SHA tag from the registry and record that immutable choice; reserve `latest` for evaluation. Compose stores SQLite and generated session-signing keys in the named `mikanarr-data` volume mounted at `/app/data`. The volume is initialized for the non-root application user; there is no host `data/` directory to create for a new deployment.
 
 The published port is loopback-only by default (`127.0.0.1:12306`). Put a TLS-terminating reverse proxy in front of it for normal use and leave `COOKIE_SECURE=true`. To intentionally expose it on a trusted LAN, set `BIND_ADDRESS=0.0.0.0` in root `.env`, apply firewall controls, and restart with `docker compose up -d --wait`.
+
+For a Docker-provider Traefik deployment, set `MIKANARR_HOST` in `.env`, keep `COOKIE_SECURE=true`, set `TRUST_PROXY_HOPS=1` when Traefik is the only protected proxy hop, and use the optional override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --wait
+```
+
+The override joins the external `${TRAEFIK_NETWORK:-traefik}` network, uses the `${TRAEFIK_ENTRYPOINT:-websecure}` entrypoint, and enables TLS. Traefik must already provide that network, entrypoint, and certificate configuration. The base Compose file remains usable by itself, and the override retains its loopback-only host port.
 
 ## Configuration
 
@@ -45,26 +53,48 @@ At least one allowed subject (`OIDC_ALLOWED_SUBJECTS`, comma-separated) or requi
 Back up the named volume while the application is stopped so the SQLite files are consistent:
 
 ```bash
-docker compose stop mikanarr
+(
+set -eu
+umask 077
 mkdir -p backups
-docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > backups/mikanarr-data-$(date +%F).tar.gz
+backup="backups/mikanarr-data-$(date +%Y%m%d-%H%M%S).tar.gz"
+trap 'docker compose up -d --wait' EXIT
+docker compose stop mikanarr
+( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
+test -s "$backup"
 docker compose up -d --wait
+trap - EXIT
+)
 ```
 
-To restore, stop the service, first make a fresh backup, then run the following command with the intended archive path. It deliberately replaces all application data and restores node ownership.
+To restore, first validate the intended archive, then stop the service and make a fresh backup. The following command deliberately replaces all application data and restores node ownership.
 
 ```bash
 (
 set -eu
+umask 077
+restore="$PWD/backups/mikanarr-data-YYYY-MM-DD.tar.gz"
+test -f "$restore"
+docker compose run --rm --no-deps --user root -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; tar -tzf /backup.tar.gz > /tmp/backup.list; grep -Eq "(^|/)database\.sqlite$" /tmp/backup.list'
 docker compose stop mikanarr
 mkdir -p backups
 backup="backups/mikanarr-data-before-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
 ( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
 test -s "$backup"
-docker compose run --rm --no-deps --user root -v "$PWD/backups/mikanarr-data-YYYY-MM-DD.tar.gz:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
+docker compose run --rm --no-deps --user root -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
 docker compose up -d --wait
 )
 ```
+
+To roll back an application release, first make a backup, set `PREVIOUS_IMAGE` to the exact previously known-good image tag or digest, then recreate from it:
+
+```bash
+test -n "${PREVIOUS_IMAGE:-}"
+IMAGE_NAME="$PREVIOUS_IMAGE" docker compose pull
+IMAGE_NAME="$PREVIOUS_IMAGE" docker compose up -d --wait --force-recreate
+```
+
+Persist the selected `IMAGE_NAME` in `.env` after verification so later Compose commands do not drift back to `latest`. A database migration may not be backward-compatible, so use the pre-upgrade data backup if the older application cannot read the upgraded database.
 
 Treat Mikan feed URLs/tokens, Sonarr API keys, `.env`, database backups, and `/app/data/jwt.key` as secrets. Do not paste them into issues or logs. If exposed: revoke/regenerate the Mikan feed token and update affected patterns; generate a new Sonarr API key and update root `.env`; then stop the service, make a backup, remove `/app/data/jwt.key` and `/app/data/jwt.key.pub` through a one-off Compose run, and start it again. New keys invalidate all existing sessions.
 

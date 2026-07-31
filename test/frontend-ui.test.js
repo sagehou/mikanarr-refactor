@@ -80,3 +80,25 @@ test('ConfirmDialog renders caller strings as text and removes its Escape listen
   delete global.window;
   delete global.document;
 });
+
+test('ConfirmDialog Escape cancels once and restores its trigger focus', async () => {
+  const dom = installDom();
+  const trigger = document.createElement('button');
+  document.body.appendChild(trigger);
+  trigger.focus();
+
+  const result = ConfirmDialog.show({ title: '删除', message: '确认删除？' });
+  const event = new window.KeyboardEvent('keydown', {
+    key: 'Escape', bubbles: true, cancelable: true
+  });
+  document.dispatchEvent(event);
+
+  assert.equal(await result, false);
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(document.querySelector('.confirm-overlay'), null);
+  assert.equal(document.activeElement, trigger);
+
+  dom.window.close();
+  delete global.window;
+  delete global.document;
+});

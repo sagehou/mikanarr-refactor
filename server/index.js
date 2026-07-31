@@ -20,12 +20,50 @@ async function start({ env = process.env, logger = console } = {}) {
   }
 }
 
-if (require.main === module) {
-  require('dotenv').config();
-  start().catch(error => {
-    console.error('Failed to start:', error);
-    process.exitCode = 1;
-  });
+function createShutdown({ server, database }) {
+  let pending;
+  return function shutdown() {
+    if (pending) return pending;
+    pending = new Promise((resolve, reject) => {
+      const finish = serverError => {
+        try {
+          database.close();
+        } catch (databaseError) {
+          return reject(databaseError);
+        }
+        return serverError ? reject(serverError) : resolve();
+      };
+      try {
+        server.close(finish);
+      } catch (error) {
+        finish(error);
+      }
+    });
+    return pending;
+  };
 }
 
-module.exports = { start };
+function installShutdownHandlers(runtime, { processRef = process, logger = console } = {}) {
+  const shutdown = createShutdown(runtime);
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    processRef.on(signal, () => {
+      shutdown().catch(() => {
+        logger.error(`[shutdown] ${signal} failed`);
+        processRef.exitCode = 1;
+      });
+    });
+  }
+  return shutdown;
+}
+
+if (require.main === module) {
+  require('dotenv').config();
+  start()
+    .then(runtime => installShutdownHandlers(runtime))
+    .catch(error => {
+      console.error('Failed to start:', error);
+      process.exitCode = 1;
+    });
+}
+
+module.exports = { start, createShutdown, installShutdownHandlers };

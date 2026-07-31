@@ -2,8 +2,10 @@ FROM node:22.23.1-alpine3.24
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+COPY package*.json .npmrc ./
+RUN npm install --global --ignore-scripts npm@11.18.0 \
+    && test "$(npm --version)" = "11.18.0" \
+    && npm ci --omit=dev
 
 COPY public ./public
 COPY server ./server

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { statSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
 const { createApp } = require('../server/app');
+const { reserveFailureWindow } = require('../server/routes/auth');
 const { createAppFixture, login, CookieJar, validPattern } = require('./helpers/fixtures');
 
 function cookieValue(response, name = 'mikanarr_session') {
@@ -162,6 +163,37 @@ test('local login rate limits the sixth failure per IP for 15 minutes', async t 
 
   now += 15 * 60 * 1000;
   assert.equal((await login(fixture, 'admin', 'wrong')).status, 401);
+});
+
+test('login failure tracking prunes expired clients and fails closed at capacity', () => {
+  const now = 2_000_000;
+  const failures = new Map([
+    ['expired', { count: 5, startedAt: now - 15 * 60 * 1000 }],
+    ['active', { count: 1, startedAt: now - 1 }]
+  ]);
+
+  assert.deepEqual(reserveFailureWindow(failures, 'replacement', now, 2), { count: 0, startedAt: now });
+  assert.deepEqual([...failures.keys()], ['active', 'replacement']);
+  assert.equal(reserveFailureWindow(failures, 'overflow', now, 2), undefined);
+  assert.deepEqual([...failures.keys()], ['active', 'replacement']);
+});
+
+test('a full failure tracker rejects an untracked client before checking credentials', async t => {
+  let now = 1_000;
+  const fixture = await createAppFixture({
+    clock: () => now,
+    authFailureCapacity: 1,
+    env: { TRUST_PROXY_HOPS: '1' }
+  });
+  t.after(fixture.close);
+
+  assert.equal((await loginFrom(fixture, '198.51.100.1')).status, 401);
+  const blocked = await loginFrom(fixture, '198.51.100.2', 'secret');
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.headers.has('set-cookie'), false);
+
+  now += 15 * 60 * 1000;
+  assert.equal((await loginFrom(fixture, '198.51.100.2', 'secret')).status, 200);
 });
 
 test('successful login resets the failure counter', async t => {

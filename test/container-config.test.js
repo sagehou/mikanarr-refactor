@@ -33,13 +33,19 @@ test('production dependency floors and exact test dependencies stay patched', ()
   assert.equal(manifest.devDependencies.jsdom, '29.1.1');
   assert.equal(manifest.devDependencies.yaml, '2.9.0');
   assert.equal(manifest.dependencies.cors, undefined);
+  assert.equal(manifest.packageManager, 'npm@11.18.0');
   assert.deepEqual(manifest.allowScripts, { 'better-sqlite3@12.11.1': true });
+  assert.equal(read('.npmrc').trim(), 'strict-allow-scripts=true');
 });
 
 test('Dockerfile defines a pinned production-only non-root healthy runtime', () => {
   const dockerfile = read('Dockerfile');
   assert.match(dockerfile, /^FROM node:22\.23\.1-alpine3\.24$/m);
-  assert.match(dockerfile, /^RUN npm ci --omit=dev$/m);
+  assert.match(dockerfile, /^COPY package\*\.json \.npmrc \.\/$/m);
+  assert.match(dockerfile, /npm install --global --ignore-scripts npm@11\.18\.0/);
+  assert.match(dockerfile, /test "\$\(npm --version\)" = "11\.18\.0"/);
+  assert.match(dockerfile, /npm ci --omit=dev/);
+  assert.ok(dockerfile.indexOf('npm@11.18.0') < dockerfile.indexOf('npm ci --omit=dev'));
   assert.match(dockerfile, /(?:mkdir|install).*\/app\/data/);
   assert.match(dockerfile, /chown[^\n]*node:node[^\n]*\/app\/data/);
   assert.match(dockerfile, /^USER node$/m);
@@ -54,6 +60,12 @@ test('.dockerignore excludes local state, secrets, and non-runtime build context
   }
 });
 
+test('.gitignore excludes secret backup archives', () => {
+  const ignored = read('.gitignore').split(/\r?\n/).filter(Boolean);
+  assert.ok(ignored.includes('backups/'));
+  assert.ok(ignored.includes('*.tar.gz'));
+});
+
 test('Compose defaults to GHCR, loopback binding, root env, persistent data, and health gating', () => {
   const compose = parseYaml('docker-compose.yml');
   const service = compose.services.mikanarr;
@@ -65,6 +77,21 @@ test('Compose defaults to GHCR, loopback binding, root env, persistent data, and
   assert.ok(!service.volumes.includes('./data:/app/data'));
   assert.match([service.healthcheck.test].flat().join(' '), /wget .*\/api\/health/);
   assert.equal(service.healthcheck.interval, '5s');
+  assert.deepEqual(service.logging, {
+    driver: 'json-file',
+    options: { 'max-size': '10m', 'max-file': '3' }
+  });
+});
+
+test('optional Traefik override parameterizes the host and external network', () => {
+  const compose = parseYaml('docker-compose.traefik.yml');
+  const service = compose.services.mikanarr;
+  assert.equal(service.labels['traefik.enable'], 'true');
+  assert.equal(service.labels['traefik.docker.network'], '${TRAEFIK_NETWORK:-traefik}');
+  assert.equal(service.labels['traefik.http.routers.mikanarr.rule'], 'Host(`${MIKANARR_HOST:?set MIKANARR_HOST}`)');
+  assert.equal(service.labels['traefik.http.routers.mikanarr.tls'], 'true');
+  assert.ok(service.networks.includes('traefik'));
+  assert.deepEqual(compose.networks.traefik, { external: true, name: '${TRAEFIK_NETWORK:-traefik}' });
 });
 
 test('the copied environment example fails closed until authentication is configured', () => {
@@ -77,14 +104,35 @@ test('the copied environment example fails closed until authentication is config
   );
 });
 
-test('the destructive restore recipe makes a fresh no-clobber backup first and is valid shell', () => {
+test('backup and restore recipes protect archives and are valid shell', () => {
   const blocks = [...read('README.md').matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]);
+  const backup = blocks.find(block => block.includes('trap') && block.includes('tar -C /app/data -czf'));
   const restore = blocks.find(block => block.includes('find /app/data -mindepth 1'));
+  assert.ok(backup, 'backup command block');
   assert.ok(restore, 'restore command block');
+  assert.match(backup, /umask 077/);
+  assert.match(backup, /\( set -C; docker compose run[^\n]+> "\$backup" \)/);
+  assert.match(backup, /test -s "\$backup"/);
   assert.match(restore, /backup="backups\/mikanarr-data-before-restore-\$\(date \+%Y%m%d-%H%M%S\)\.tar\.gz"/);
+  assert.match(restore, /umask 077/);
+  assert.match(restore, /test -f "\$restore"/);
+  assert.match(restore, /docker compose run --rm --no-deps --user root -v "\$restore:\/backup\.tar\.gz:ro"[^\n]+tar -tzf \/backup\.tar\.gz/);
+  assert.match(restore, /grep -Eq "\(\^\|\/\)database\\\.sqlite\$"/);
   assert.match(restore, /\( set -C; docker compose run[^\n]+> "\$backup" \)/);
   assert.ok(restore.indexOf('> "$backup"') < restore.indexOf('find /app/data -mindepth 1'));
-  const syntax = spawnSync('bash', ['-n'], { input: restore, encoding: 'utf8' });
+  assert.ok(restore.indexOf('tar -tzf /backup.tar.gz') < restore.indexOf('find /app/data -mindepth 1'));
+  for (const block of [backup, restore]) {
+    const syntax = spawnSync('bash', ['-n'], { input: block, encoding: 'utf8' });
+    assert.equal(syntax.status, 0, syntax.stderr);
+  }
+});
+
+test('legacy migration protects its backup archive', () => {
+  const blocks = [...read('UPGRADE_NOTES.md').matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]);
+  const migration = blocks.find(block => block.includes('legacy-data-before-volume'));
+  assert.ok(migration, 'legacy migration command block');
+  assert.match(migration, /umask 077/);
+  const syntax = spawnSync('bash', ['-n'], { input: migration, encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
@@ -96,9 +144,10 @@ test('GitHub checks gate image publishing and workflow edits trigger releases', 
   const setupNode = checkJob.steps.find(step => step.uses === 'actions/setup-node@v4');
   assert.equal(setupNode.with['node-version'], '22.23.1');
   const commands = checkJob.steps.map(step => step.run).filter(Boolean);
+  assert.ok(commands.includes('npm install --global --ignore-scripts npm@11.18.0 && test "$(npm --version)" = "11.18.0"'));
   assert.ok(commands.includes('npm ci'));
   assert.ok(commands.includes('npm run check'));
-  assert.ok(commands.includes('npm audit --omit=dev --audit-level=high'));
+  assert.ok(commands.includes('npm audit --audit-level=high'));
 
   const publish = parseYaml('.github/workflows/docker-publish.yml');
   assert.equal(publish.jobs.check.uses, './.github/workflows/check.yml');
@@ -120,8 +169,11 @@ test('GitLab verification gates publish and health-gated deploy with known hosts
   const config = parseYaml('.gitlab-ci.yml');
   assert.deepEqual(config.stages, ['test', 'publish', 'deploy']);
   assert.equal(config.test.image, 'node:22.23.1-alpine3.24');
+  assert.ok(config.test.script.includes('npm install --global --ignore-scripts npm@11.18.0'));
+  assert.ok(config.test.script.includes('test "$(npm --version)" = "11.18.0"'));
   assert.ok(config.test.script.includes('npm ci'));
   assert.ok(config.test.script.includes('npm run check'));
+  assert.ok(config.test.script.includes('npm audit --audit-level=high'));
   assert.ok([config['publish-arm'].needs].flat().includes('test'));
   assert.notEqual(config.deploy.image, 'alpine:latest');
   assert.match(config.deploy.image, /^alpine:\d+\.\d+\.\d+$/);

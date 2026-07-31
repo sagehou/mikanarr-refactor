@@ -319,16 +319,17 @@
   </div>
 
   <!-- Add Series Modal -->
-  <div class="modal fade" id="add-series-modal" tabindex="-1">
+  <div class="modal fade" id="add-series-modal" tabindex="-1" aria-labelledby="add-series-modal-title">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">添加到 Sonarr</h5>
+          <h5 class="modal-title" id="add-series-modal-title">添加到 Sonarr</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
           <!-- Step 1: Search -->
           <div id="add-series-step-1">
+            <label class="visually-hidden" for="sonarr-search-input">搜索剧集</label>
             <div class="input-group mb-3">
               <input type="text" class="form-control" id="sonarr-search-input" placeholder="输入剧集名称搜索...">
               <button class="btn btn-primary" id="sonarr-search-btn">搜索</button>
@@ -343,16 +344,16 @@
               <input type="hidden" id="selected-tvdb-id">
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label">根目录</label>
+                  <label class="form-label" for="sonarr-root-folder">根目录</label>
                   <select class="form-select" id="sonarr-root-folder" required></select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">质量配置</label>
+                  <label class="form-label" for="sonarr-quality-profile">质量配置</label>
                   <select class="form-select" id="sonarr-quality-profile" required></select>
                 </div>
                 <!-- Language Profile Removed -->
                 <div class="col-md-6">
-                  <label class="form-label">剧集类型</label>
+                  <label class="form-label" for="sonarr-series-type">剧集类型</label>
                   <select class="form-select" id="sonarr-series-type">
                     <option value="anime" selected>Anime (动漫)</option>
                     <option value="standard">Standard (标准)</option>
@@ -360,7 +361,7 @@
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">监控选项</label>
+                  <label class="form-label" for="sonarr-monitor">监控选项</label>
                   <select class="form-select" id="sonarr-monitor">
                     <option value="all" selected>所有剧集</option>
                     <option value="future">仅未来剧集</option>

@@ -110,6 +110,23 @@ test('overwrite import retains statistics columns and reports the final count', 
   assert.equal(fixture.database.raw.pragma('table_info(patterns)').some(column => column.name === 'match_count'), true);
 });
 
+test('append import rolls back every row on a database failure', async t => {
+  const { fixture, headers } = await authenticatedFixture(t);
+  fixture.database.raw.exec(`
+    CREATE TRIGGER fail_second_import BEFORE INSERT ON patterns
+    WHEN NEW.series = 'Second'
+    BEGIN SELECT RAISE(ABORT, 'forced failure'); END
+  `);
+
+  const response = await jsonRequest(fixture, headers, '/api/patterns/import', 'POST', {
+    patterns: [validPattern({ series: 'First' }), validPattern({ series: 'Second' })]
+  });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: 'Internal server error', code: 'REQUEST_FAILED' });
+  assert.deepEqual(fixture.database.getPatterns(), []);
+});
+
 test('last_matched_at is an allowed Pattern sort field', async t => {
   const { fixture, headers } = await authenticatedFixture(t);
   const later = fixture.database.createPattern(validPattern({ series: 'Later' }));

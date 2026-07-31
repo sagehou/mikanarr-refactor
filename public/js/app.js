@@ -13,6 +13,9 @@ class MikanarrApp {
     this.currentPatternId = null;
     this.seriesList = [];
     this.seriesLoadGeneration = 0;
+    this.seriesSearchGeneration = 0;
+    this.seriesInfoGeneration = 0;
+    this.rssLoadGeneration = 0;
     this.patternLoadGeneration = 0;
     this.patternLoadingGeneration = null;
     this.rssItems = [];
@@ -48,13 +51,10 @@ class MikanarrApp {
           const container = document.getElementById('oidc-login-container');
           if (container) container.classList.remove('d-none');
           if (config.oidcAutoLogin && allowAutoLogin) {
-            console.log('[OIDC] Auto-login enabled, redirecting...');
             window.location.href = '/auth/oidc/login';
             return;
           }
-          if (container) {
-            console.log('[OIDC] SSO button enabled');
-          } else {
+          if (!container) {
             console.error('[OIDC] Button container not found');
           }
         }
@@ -147,9 +147,8 @@ setupEventListeners() {
     // 编辑页面删除按钮
     document.getElementById('edit-delete-btn').addEventListener('click', async () => {
       if (this.currentPatternId) {
-        await this.deletePattern(this.currentPatternId);
-        // deletePattern will reload list, but we need to switch view manually if it doesn't
-        this.showPatternList();
+        const deleted = await this.deletePattern(this.currentPatternId);
+        if (deleted) this.showPatternList();
       }
     });
     document.getElementById('pattern-form').addEventListener('submit', (e) => this.savePattern(e));
@@ -279,6 +278,9 @@ setupEventListeners() {
   // ===== Keyboard Shortcuts =====
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
+      if (document.querySelector('.confirm-overlay, .modal.show, .modal[aria-modal="true"]') ||
+          document.body.classList.contains('modal-open')) return;
+
       // Skip if user is typing in an input
       const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
       
@@ -343,7 +345,10 @@ setupEventListeners() {
   }
 
   async searchSonarrSeries() {
-    const query = document.getElementById('sonarr-search-input').value.trim();
+    const generation = ++this.seriesSearchGeneration;
+    const searchInput = document.getElementById('sonarr-search-input');
+    const query = searchInput.value.trim();
+    const isCurrent = () => generation === this.seriesSearchGeneration && searchInput.value.trim() === query;
     if (!query) return;
 
     const resultsDiv = document.getElementById('sonarr-search-results');
@@ -351,15 +356,18 @@ setupEventListeners() {
 
     try {
       const response = await this.apiRequest(`/sonarr/api/v3/series/lookup?term=${encodeURIComponent(query)}`);
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error('搜索失败');
       
       const allResults = await response.json();
+      if (!isCurrent()) return;
       // Store results for selection
       this.searchResults = allResults;
       this.currentSearchPage = 1;
       this.renderSearchResults();
       
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('[searchSonarrSeries] Error:', error);
       const message = document.createElement('div');
       message.className = 'text-center p-3 text-danger';
@@ -520,6 +528,7 @@ setupEventListeners() {
     document.getElementById('add-series-step-2').classList.remove('d-none');
     document.getElementById('add-series-submit-btn').disabled = false;
     document.getElementById('add-series-back-btn').disabled = false;
+    document.getElementById('sonarr-root-folder').focus();
   }
 
   async handleLogin(e) {
@@ -656,7 +665,6 @@ setupEventListeners() {
       }
       
       // 2. Create tag if not exists
-      console.log('[getOrCreateMikanarrTag] Creating new tag:', TAG_LABEL);
       const createResponse = await this.apiRequest('/sonarr/api/v3/tag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -806,9 +814,7 @@ setupEventListeners() {
   async loadSeries() {
     const generation = ++this.seriesLoadGeneration;
     try {
-      console.log('[loadSeries] Fetching series from Sonarr...');
       const response = await this.apiRequest('/sonarr/api/v3/series');
-      console.log('[loadSeries] Response status:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -816,8 +822,6 @@ setupEventListeners() {
       }
       
       const series = await response.json();
-      console.log('[loadSeries] Response type:', typeof series);
-      console.log('[loadSeries] Is array:', Array.isArray(series));
       
       if (!Array.isArray(series)) {
         // Check if response is HTML (auth page)
@@ -826,8 +830,6 @@ setupEventListeners() {
         }
         throw new Error(`Invalid response type: expected array, got ${typeof series}`);
       }
-      
-      console.log('[loadSeries] Loaded', series.length, 'series');
       
       if (generation !== this.seriesLoadGeneration) return;
       this.seriesLoadError = null;
@@ -943,8 +945,11 @@ setupEventListeners() {
 
   // ===== Sonarr Deep Integration - Series Info Card =====
   async updateSeriesInfoCard() {
+    const generation = ++this.seriesInfoGeneration;
     const seriesTitle = document.getElementById('series').value;
     const cardDiv = document.getElementById('series-info-card');
+    const isCurrent = () => generation === this.seriesInfoGeneration &&
+      document.getElementById('series').value === seriesTitle;
     
     if (!seriesTitle) {
       cardDiv.classList.add('d-none');
@@ -968,13 +973,17 @@ setupEventListeners() {
     if (series.tmdbId) {
       try {
         const tmdbData = await this.getTmdbDetails(series.tmdbId);
+        if (!isCurrent()) return;
         if (tmdbData?.poster_path) {
           posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
         }
       } catch (e) {
+        if (!isCurrent()) return;
         console.warn('[updateSeriesInfoCard] TMDB fetch failed:', e);
       }
     }
+
+    if (!isCurrent()) return;
 
     // Fallback to Sonarr poster
     if (!posterUrl) {
@@ -1058,8 +1067,6 @@ setupEventListeners() {
       return;
     }
 
-    console.log('[loadSeasons] Loading seasons for:', seriesTitle, series.seasons.length, 'seasons');
-    
     series.seasons.forEach(season => {
       const option = document.createElement('option');
       option.value = String(season.seasonNumber).padStart(2, '0');
@@ -1234,6 +1241,7 @@ setupEventListeners() {
       `;
       const checkbox = tr.querySelector('.row-checkbox');
       checkbox.dataset.id = pattern.id;
+      checkbox.setAttribute('aria-label', `选择 Pattern：${pattern.series}`);
       const tableStatus = tr.querySelector('.pattern-status-badge');
       tableStatus.classList.add(statusMeta.badgeClass);
       tableStatus.textContent = statusMeta.label;
@@ -1457,7 +1465,9 @@ setupEventListeners() {
     card.querySelector('.pattern-card-quality').textContent = pattern.quality;
     const copyButton = card.querySelector('.btn-card-copy');
     if (copyButton) copyButton.dataset.remote = pattern.remote;
-    card.querySelector('.card-checkbox').dataset.id = pattern.id;
+    const cardCheckbox = card.querySelector('.card-checkbox');
+    cardCheckbox.dataset.id = pattern.id;
+    cardCheckbox.setAttribute('aria-label', `选择 Pattern：${pattern.series}`);
     card.querySelectorAll('.btn-card-edit, .btn-card-delete').forEach(button => {
       button.dataset.id = pattern.id;
     });
@@ -1496,11 +1506,8 @@ setupEventListeners() {
           // Swipe Right -> Edit
           this.editPattern(parseInt(card.dataset.patternId));
         } else {
-          // Swipe Left -> Confirm Delete
-          // Visual feedback before action would be ideal, but for now direct action
-          if (confirm('确定要删除这个 Pattern 吗？(滑动触发)')) {
-             this.deletePattern(parseInt(card.dataset.patternId));
-          }
+          // Swipe Left -> use the same confirmation flow as the delete button
+          this.deletePattern(parseInt(card.dataset.patternId));
         }
       }
     };
@@ -1879,7 +1886,7 @@ setupEventListeners() {
   importFromMikan() {
     const input = document.getElementById('mikan-import').value.trim();
     if (!input) {
-      alert('请输入Mikan URL');
+      Toast.warning('请输入 Mikan URL');
       return;
     }
 
@@ -1889,9 +1896,14 @@ setupEventListeners() {
     // Try to parse RSS URL
     // Format: https://mikanani.me/RSS/Bangumi?bangumiId=3455&subgroupid=370
     if (input.includes('bangumiId=')) {
-      const url = new URL(input);
-      bangumiId = url.searchParams.get('bangumiId');
-      subgroupid = url.searchParams.get('subgroupid');
+      try {
+        const url = new URL(input);
+        bangumiId = url.searchParams.get('bangumiId');
+        subgroupid = url.searchParams.get('subgroupid');
+      } catch (_) {
+        Toast.warning('无法解析 URL，请检查格式');
+        return;
+      }
     } 
     // Try to parse Home URL
     // Format: https://mikanani.me/Home/Bangumi/3455
@@ -2019,14 +2031,11 @@ setupEventListeners() {
   }
 
   async editPattern(id) {
-    console.log('[editPattern] Called with id:', id);
     try {
       const response = await this.apiRequest(`/api/patterns/${id}`);
-      console.log('[editPattern] Response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.log('[editPattern] Error data:', errorData);
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
@@ -2036,7 +2045,7 @@ setupEventListeners() {
     } catch (error) {
       console.error('[editPattern] Failed to load pattern:', error);
       console.error('[editPattern] Error stack:', error.stack);
-      alert('加载 Pattern 失败: ' + error.message);
+      Toast.error('加载 Pattern 失败: ' + error.message);
     }
   }
 
@@ -2048,15 +2057,17 @@ setupEventListeners() {
       cancelText: '取消',
       type: 'danger'
     });
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     try {
       await this.apiRequest(`/api/patterns/${id}`, { method: 'DELETE' });
       this.loadPatterns();
       Toast.success('Pattern 已删除');
+      return true;
     } catch (error) {
       console.error('Failed to delete pattern:', error);
       Toast.error('删除失败: ' + error.message);
+      return false;
     }
   }
 
@@ -2084,7 +2095,6 @@ setupEventListeners() {
     const deleteBtn = document.getElementById('edit-delete-btn');
 
     if (pattern) {
-      console.log('[showPatternEdit] Editing pattern:', pattern.series);
       document.getElementById('edit-title').textContent = '编辑 Pattern';
       // Show delete button in edit mode
       deleteBtn.classList.remove('d-none');
@@ -2103,7 +2113,6 @@ setupEventListeners() {
       this.loadSeasons(pattern.season);
       this.updateProxyUrl();
     } else {
-      console.log('[showPatternEdit] Creating new pattern');
       document.getElementById('edit-title').textContent = '新建 Pattern';
       // Hide delete button in create mode
       deleteBtn.classList.add('d-none');
@@ -2167,7 +2176,10 @@ setupEventListeners() {
   }
 
   async loadRssPreview() {
-    const remote = document.getElementById('remote').value;
+    const generation = ++this.rssLoadGeneration;
+    const remoteInput = document.getElementById('remote');
+    const remote = remoteInput.value;
+    const isCurrent = () => generation === this.rssLoadGeneration && remoteInput.value === remote;
     if (!remote) {
       this.rssItems = [];
       this.renderRssPreview();
@@ -2180,6 +2192,7 @@ setupEventListeners() {
     try {
       const encoded = encodeURIComponent(remote);
       const response = await this.apiRequest(`/proxy?url=${encoded}`);
+      if (!isCurrent()) return;
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -2187,6 +2200,7 @@ setupEventListeners() {
       }
 
       const text = await response.text();
+      if (!isCurrent()) return;
 
       const parser = new DOMParser();
       const xml = parser.parseFromString(text, 'text/xml');
@@ -2215,7 +2229,6 @@ setupEventListeners() {
         // Use the first item to find match
         const match = this.findBestMatchSeries(this.rssItems[0]);
         if (match) {
-          console.log('[AutoMatch] Found series:', match.title);
           const seriesSelect = document.getElementById('series');
           seriesSelect.value = match.title;
           this.loadSeasons();
@@ -2227,6 +2240,7 @@ setupEventListeners() {
 
       this.updateProxyUrl();
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('Failed to load RSS preview:', error);
       this.rssItems = [];
 
@@ -2277,7 +2291,8 @@ setupEventListeners() {
 
     previewDiv.replaceChildren();
     matchedItems.forEach((item, index) => {
-      const row = document.createElement('div');
+      const row = document.createElement('button');
+      row.type = 'button';
       row.className = `rss-item${item.matched ? ' matched' : ''}`;
       row.textContent = item.title;
       row.addEventListener('click', () => this.selectRssItem(this.rssItems[index]));
@@ -2300,8 +2315,13 @@ setupEventListeners() {
     input.value = input.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  copyEpisode() {
-    navigator.clipboard.writeText('(?<episode>\\d+)');
+  async copyEpisode() {
+    try {
+      await navigator.clipboard.writeText('(?<episode>\\d+)');
+      Toast.success('Episode 片段已复制到剪贴板');
+    } catch (error) {
+      Toast.error('复制失败: ' + error.message);
+    }
   }
 
   updateProxyUrl() {
@@ -2325,10 +2345,14 @@ setupEventListeners() {
     }
   }
 
-  copyProxyUrl() {
+  async copyProxyUrl() {
     const url = document.getElementById('proxy-url').value;
-    navigator.clipboard.writeText(url);
-    Toast.success('Proxy URL 已复制到剪贴板');
+    try {
+      await navigator.clipboard.writeText(url);
+      Toast.success('Proxy URL 已复制到剪贴板');
+    } catch (error) {
+      Toast.error('复制失败: ' + error.message);
+    }
   }
 
   async exportPatterns() {
@@ -2718,7 +2742,6 @@ if (typeof module === 'object' && module.exports) {
 } else {
   window.MikanarrApp = MikanarrApp;
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('[App] Mikanarr v2.1.0 - Build: 2026-07-26');
     new MikanarrApp();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')

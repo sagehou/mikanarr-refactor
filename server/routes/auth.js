@@ -4,6 +4,7 @@ const { createOidcProvider, isOidcAuthorized } = require('../oidc');
 const { readCookie } = require('../session');
 
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILURE_CLIENTS = 1024;
 const OIDC_ERROR_TEXT = 'OIDC authentication failed';
 const OIDC_COOKIE_NAMES = Object.freeze(['oidc_state', 'oidc_nonce', 'oidc_verifier']);
 
@@ -13,7 +14,17 @@ function credentialsMatch(actual, expected) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFactory = createOidcProvider, clock = Date.now, logger = console }) {
+function reserveFailureWindow(failures, address, now, capacity = MAX_FAILURE_CLIENTS) {
+  for (const [storedAddress, failure] of failures) {
+    if (now - failure.startedAt >= FAILURE_WINDOW_MS) failures.delete(storedAddress);
+  }
+  if (failures.size >= capacity) return undefined;
+  const failure = { count: 0, startedAt: now };
+  failures.set(address, failure);
+  return failure;
+}
+
+function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFactory = createOidcProvider, clock = Date.now, logger = console, failureCapacity = MAX_FAILURE_CLIENTS }) {
   const router = express.Router();
   const failures = new Map();
   let discoveredProvider;
@@ -51,6 +62,12 @@ function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFa
     if (failure?.count >= 5) {
       return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
     }
+    if (!failure) {
+      failure = reserveFailureWindow(failures, req.ip, now, failureCapacity);
+      if (!failure) {
+        return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
+      }
+    }
     const { username, password } = req.body || {};
     if (credentialsMatch(username, config.auth.local.username) && credentialsMatch(password, config.auth.local.password)) {
       failures.delete(req.ip);
@@ -58,9 +75,7 @@ function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFa
       sessionManager.issue(res, user);
       return res.json({ user });
     }
-    if (!failure) failure = { count: 0, startedAt: now };
     failure.count += 1;
-    failures.set(req.ip, failure);
     return res.status(401).json({ error: 'Username or password incorrect', code: 'INVALID_CREDENTIALS' });
   });
 
@@ -113,4 +128,4 @@ function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFa
   return router;
 }
 
-module.exports = { createAuthRouter };
+module.exports = { createAuthRouter, reserveFailureWindow };

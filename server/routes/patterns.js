@@ -34,7 +34,7 @@ function createPatternsRouter({ database, verifyToken, logger = console }) {
     try {
       const finalCount = mode === 'overwrite'
         ? database.overwritePatterns(patterns)
-        : (patterns.forEach(pattern => database.createPattern(pattern)), database.getPatterns().length);
+        : database.appendPatterns(patterns);
       return res.json({
         success: true,
         importedCount: patterns.length,

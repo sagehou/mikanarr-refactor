@@ -16,6 +16,8 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
     target: config.sonarr.host,
     changeOrigin: true,
     secure: !config.sonarr.tlsInsecure,
+    timeout: config.http.timeoutMs,
+    proxyTimeout: config.http.timeoutMs,
     pathRewrite(proxyPath) {
       const url = new URL(proxyPath, 'http://localhost');
       for (const key of [...url.searchParams.keys()]) {

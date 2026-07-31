@@ -2,7 +2,7 @@
 
 ## Current deployment contract
 
-Use `docker compose` from the repository root with configuration in root `.env` and the GHCR image in `docker-compose.yml`:
+Use `docker compose` from the repository root with configuration in root `.env` and the GHCR image in `docker-compose.yml`. For production, set `IMAGE_NAME` to an existing release or commit-SHA tag instead of relying on mutable `latest`, and make the documented data backup before pulling an upgrade:
 
 ```bash
 cp .env.example .env
@@ -13,6 +13,14 @@ docker compose up -d --wait
 
 The application owns a named `mikanarr-data` volume mounted at `/app/data`. It is initialized for the non-root `node` user. The default host binding is loopback; use a TLS reverse proxy for ordinary access. Only set `BIND_ADDRESS=0.0.0.0` for consciously exposed, firewall-protected LAN use. Keep `COOKIE_SECURE=true` behind TLS; `false` is for local HTTP development/testing only.
 
+If verification fails, set `PREVIOUS_IMAGE` to the exact previously known-good tag or digest and roll back the application image. If an older application cannot read a migrated database, restore the pre-upgrade data archive by following [README.md](README.md).
+
+```bash
+test -n "${PREVIOUS_IMAGE:-}"
+IMAGE_NAME="$PREVIOUS_IMAGE" docker compose pull
+IMAGE_NAME="$PREVIOUS_IMAGE" docker compose up -d --wait --force-recreate
+```
+
 ## Migrate a legacy `./data` bind mount
 
 Do this before starting the new deployment in production. The sequence first requires the legacy database, stops and removes the old Compose service without deleting volumes, and only then archives and copies the quiesced SQLite files. It creates the new Compose volume without starting the application, refuses to copy into a non-empty destination, and restores `node:node` ownership.
@@ -20,6 +28,7 @@ Do this before starting the new deployment in production. The sequence first req
 ```bash
 (
 set -eu
+umask 077
 
 # From the repository root, with the old ./data bind directory still present.
 test -f ./data/database.sqlite
