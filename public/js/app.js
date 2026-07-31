@@ -20,6 +20,8 @@ class MikanarrApp {
     this.authExpired = false;
     this.debounceTimer = null;
     this.patternLoadError = null;
+    this.seriesLoadError = null;
+    this.viewReturnFocus = null;
     
     if (autoInit) this.init();
   }
@@ -64,25 +66,32 @@ class MikanarrApp {
 
   initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    this.updateThemeIcon(savedTheme);
+    this.applyTheme(savedTheme);
   }
 
   toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    this.updateThemeIcon(newTheme);
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const update = () => this.applyTheme(newTheme);
+    if (!reducedMotion && typeof document.startViewTransition === 'function') document.startViewTransition(update);
+    else update();
+  }
+
+  applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#241c18' : '#a86f4c');
+    localStorage.setItem('theme', theme);
+    this.updateThemeIcon(theme);
   }
 
   updateThemeIcon(theme) {
     const btn = document.getElementById('theme-toggle');
     if (btn) {
       btn.innerHTML = theme === 'dark' 
-        ? '<i class="bi bi-sun"></i>' 
-        : '<i class="bi bi-moon-stars"></i>';
+        ? '<i class="bi bi-sun" aria-hidden="true"></i>'
+        : '<i class="bi bi-moon-stars" aria-hidden="true"></i>';
     }
   }
 
@@ -241,11 +250,15 @@ setupEventListeners() {
     if (view === 'card') {
       cardBtn.classList.add('active');
       tableBtn.classList.remove('active');
+      cardBtn.setAttribute('aria-pressed', 'true');
+      tableBtn.setAttribute('aria-pressed', 'false');
       cardView.classList.remove('d-none');
       tableView.classList.add('d-none');
     } else {
       tableBtn.classList.add('active');
       cardBtn.classList.remove('active');
+      tableBtn.setAttribute('aria-pressed', 'true');
+      cardBtn.setAttribute('aria-pressed', 'false');
       tableView.classList.remove('d-none');
       cardView.classList.add('d-none');
     }
@@ -565,6 +578,7 @@ setupEventListeners() {
       this.patternLoadError = null;
       this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
+      this.setPatternLoading(false);
     } catch (error) {
       if (generation !== this.patternLoadGeneration) return;
       this.patternLoadingGeneration = null;
@@ -574,17 +588,19 @@ setupEventListeners() {
       this.filteredPatterns = [];
       this.updatePatternSummary();
       this.renderCurrentView([]);
+      this.setPatternLoading(false);
       Toast.error('加载 Patterns 失败');
     }
   }
 
   showSkeletonLoading() {
+    this.setPatternLoading(true);
     // Table skeleton
     const tbody = document.getElementById('pattern-table-body');
     let skeletonHtml = '';
     for (let i = 0; i < 5; i++) {
       skeletonHtml += `
-        <tr>
+        <tr aria-hidden="true">
           <td><div class="skeleton skeleton-checkbox"></div></td>
           <td><div class="skeleton skeleton-cell-sm"></div></td>
           <td><div class="skeleton skeleton-cell-xl"></div></td>
@@ -594,6 +610,7 @@ setupEventListeners() {
           <td><div class="skeleton skeleton-cell-md"></div></td>
           <td><div class="skeleton skeleton-cell-md"></div></td>
           <td><div class="skeleton skeleton-cell-lg"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
         </tr>
       `;
     }
@@ -602,6 +619,12 @@ setupEventListeners() {
     // Card skeleton
     this.showCardSkeletonLoading();
     this.updateBatchUI();
+  }
+
+  setPatternLoading(loading) {
+    const value = String(Boolean(loading));
+    document.getElementById('pattern-card-view')?.setAttribute('aria-busy', value);
+    document.getElementById('pattern-table-view')?.setAttribute('aria-busy', value);
   }
 
   // 当前排序状态
@@ -807,6 +830,8 @@ setupEventListeners() {
       console.log('[loadSeries] Loaded', series.length, 'series');
       
       if (generation !== this.seriesLoadGeneration) return;
+      this.seriesLoadError = null;
+      this.clearSeriesLoadError();
       this.seriesList = series;
       this.renderSeriesOptions(this.seriesList);
       this.filterPatterns(document.getElementById('search-input').value);
@@ -818,21 +843,49 @@ setupEventListeners() {
         this.filterPatterns(document.getElementById('search-input').value);
       }).catch(() => console.error('[loadSeries] TMDB refresh failed'));
     } catch (error) {
-      console.error('[loadSeries] Failed to load series:', error);
       if (generation !== this.seriesLoadGeneration) return;
+      if (error.code === 'SONARR_NOT_CONFIGURED') console.info('[loadSeries] Sonarr is not configured');
+      else console.error('[loadSeries] Failed to load series:', error);
+      this.seriesLoadError = error;
       this.renderSeriesLoadError(error);
+      this.filterPatterns(document.getElementById('search-input').value);
     }
   }
 
   renderSeriesLoadError(error) {
+    const notConfigured = error.code === 'SONARR_NOT_CONFIGURED';
+    const title = notConfigured ? 'Sonarr 尚未连接' : '暂时无法同步 Sonarr';
+    const message = notConfigured
+      ? '状态核对与系列选择暂不可用，现有 Pattern 仍可浏览和编辑。'
+      : '请检查 Sonarr 地址、API Key 与网络连接后重试。';
+    const notice = document.getElementById('workspace-notice');
+    if (notice) {
+      notice.innerHTML = '<i class="bi bi-cloud-slash" aria-hidden="true"></i><strong></strong><span></span>';
+      notice.querySelector('strong').textContent = title;
+      notice.querySelector('span').textContent = message;
+      notice.classList.remove('d-none');
+    }
+
     const seriesSelect = document.getElementById('series');
     if (!seriesSelect) return;
     const errorDiv = document.createElement('div');
-    errorDiv.className = 'alert alert-warning mt-2';
-    errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>';
-    errorDiv.querySelector('.sonarr-load-error').textContent = `加载 Sonarr 系列失败: ${error.message || 'Unknown error'}`;
-    seriesSelect.parentElement.querySelector('.alert')?.remove();
-    seriesSelect.parentElement.appendChild(errorDiv);
+    errorDiv.className = 'alert alert-warning sonarr-load-alert mt-2';
+    errorDiv.setAttribute('role', 'status');
+    errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small></small>';
+    errorDiv.querySelector('.sonarr-load-error').textContent = notConfigured ? 'Sonarr 尚未配置，系列选择暂不可用' : '加载 Sonarr 系列失败';
+    errorDiv.querySelector('small').textContent = notConfigured ? '配置 SONARR_HOST 与 SONARR_API_KEY 后即可启用同步' : message;
+    const fieldContainer = seriesSelect.closest('.col-md-6') || seriesSelect.parentElement;
+    fieldContainer.querySelector('.sonarr-load-alert')?.remove();
+    fieldContainer.appendChild(errorDiv);
+  }
+
+  clearSeriesLoadError() {
+    const notice = document.getElementById('workspace-notice');
+    if (notice) {
+      notice.classList.add('d-none');
+      notice.replaceChildren();
+    }
+    document.querySelector('.sonarr-load-alert')?.remove();
   }
 
   async syncTmdbCache(series) {
@@ -988,26 +1041,20 @@ setupEventListeners() {
     seasonSelect.innerHTML = '<option value="">选择季度...</option>';
 
     if (!seriesTitle) {
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
 
     const series = this.seriesList.find(s => s.title.toLowerCase() === seriesTitle.toLowerCase());
     if (!series) {
       console.warn('[loadSeasons] Series not found in list:', seriesTitle);
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
     
     if (!series.seasons) {
       console.warn('[loadSeasons] Series has no seasons:', seriesTitle);
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
 
@@ -1021,13 +1068,23 @@ setupEventListeners() {
     });
 
     // 恢复选中的季度
-    if (currentSeason) {
-      seasonSelect.value = currentSeason;
+    this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
+  }
+
+  preserveSelectValue(select, value, label = value) {
+    if (!value) return;
+    if (!Array.from(select.options).some(option => option.value === value)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
     }
+    select.value = value;
   }
 
 
   getPatternStatus(pattern) {
+    if (this.seriesLoadError) return 'unavailable';
     const series = this.seriesList?.find(item => item.title.toLowerCase() === pattern.series.toLowerCase());
     if (!series) return 'not-found';
     return series.title === pattern.series ? 'normal' : 'case-mismatch';
@@ -1038,7 +1095,7 @@ setupEventListeners() {
     const total = document.getElementById('pattern-total-count');
     const issues = document.getElementById('pattern-issue-count');
     if (total) total.textContent = String(patterns.length);
-    if (issues) issues.textContent = String(patterns.filter(item => this.getPatternStatus(item) !== 'normal').length);
+    if (issues) issues.textContent = String(patterns.filter(item => ['case-mismatch', 'not-found'].includes(this.getPatternStatus(item))).length);
   }
 
   renderPatterns(patterns) {
@@ -1084,7 +1141,8 @@ setupEventListeners() {
       const statusMeta = {
         normal: { label: '正常', badgeClass: 'status-ok' },
         'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
-        'not-found': { label: '未找到系列', badgeClass: 'status-error' }
+        'not-found': { label: '未找到系列', badgeClass: 'status-error' },
+        unavailable: { label: '等待 Sonarr', badgeClass: 'status-muted' }
       }[status];
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
@@ -1095,7 +1153,9 @@ setupEventListeners() {
       let fixBtn = '';
       let addBtn = ''; // Button to add series to Sonarr
       
-      if (!series) {
+      if (status === 'unavailable') {
+        matchIcon = '<i class="bi bi-cloud-slash text-info" title="Sonarr 暂不可用"></i> ';
+      } else if (!series) {
         // Series not found in Sonarr at all
         matchIcon = '<i class="bi bi-exclamation-circle text-danger" title="Sonarr中未找到此系列"></i> ';
         
@@ -1276,15 +1336,16 @@ setupEventListeners() {
       return;
     }
 
-    patterns.forEach((pattern, index) => container.appendChild(this.createPatternCard(pattern, index)));
+    patterns.forEach(pattern => container.appendChild(this.createPatternCard(pattern)));
   }
 
-  createPatternCard(pattern, index = 0) {
+  createPatternCard(pattern) {
     const status = this.getPatternStatus(pattern);
     const statusMeta = {
       normal: { label: '正常', badgeClass: 'status-ok' },
       'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
-      'not-found': { label: '未找到系列', badgeClass: 'status-error' }
+      'not-found': { label: '未找到系列', badgeClass: 'status-error' },
+      unavailable: { label: '等待 Sonarr', badgeClass: 'status-muted' }
     }[status];
     // Find the series to get tmdbId and stats
     const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
@@ -1309,7 +1370,6 @@ setupEventListeners() {
 
     const card = document.createElement('div');
     card.className = `pattern-card pattern-card--${status}`;
-    card.style.setProperty('--card-index', String(Math.min(index, 8)));
     card.dataset.patternId = pattern.id;
     card.dataset.tmdbId = series?.tmdbId || '';
 
@@ -1363,9 +1423,11 @@ setupEventListeners() {
           <input type="checkbox" class="form-check-input card-checkbox">
         </div>
         <div class="pattern-card-actions">
-          <button type="button" class="btn btn-sm btn-outline-secondary btn-card-copy" title="复制RSS链接" aria-label="复制 RSS 链接">
-            <i class="bi bi-clipboard"></i>
-          </button>
+          ${pattern.remote ? `
+            <button type="button" class="btn btn-sm btn-outline-secondary btn-card-copy" title="复制 RSS 链接" aria-label="复制 RSS 链接">
+              <i class="bi bi-clipboard" aria-hidden="true"></i>
+            </button>
+          ` : ''}
           ${series?.titleSlug && this.sonarrHost ? `
             <a target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info btn-card-sonarr" title="在Sonarr中打开" aria-label="在 Sonarr 中打开">
               <i class="bi bi-box-arrow-up-right"></i>
@@ -1393,7 +1455,8 @@ setupEventListeners() {
     if (zhName) card.querySelector('.pattern-card-title-zh').textContent = zhName;
     card.querySelector('.pattern-card-language').textContent = pattern.language;
     card.querySelector('.pattern-card-quality').textContent = pattern.quality;
-    card.querySelector('.btn-card-copy').dataset.remote = pattern.remote || '';
+    const copyButton = card.querySelector('.btn-card-copy');
+    if (copyButton) copyButton.dataset.remote = pattern.remote;
     card.querySelector('.card-checkbox').dataset.id = pattern.id;
     card.querySelectorAll('.btn-card-edit, .btn-card-delete').forEach(button => {
       button.dataset.id = pattern.id;
@@ -1540,7 +1603,7 @@ setupEventListeners() {
     let skeletonHtml = '';
     for (let i = 0; i < 6; i++) {
       skeletonHtml += `
-        <div class="pattern-card-skeleton">
+        <div class="pattern-card-skeleton" aria-hidden="true">
           <div class="skeleton skeleton-poster"></div>
           <div class="skeleton-body">
             <div class="skeleton skeleton-title"></div>
@@ -1998,6 +2061,10 @@ setupEventListeners() {
   }
 
   showPatternEdit(pattern = null) {
+    const activeElement = document.activeElement;
+    if (activeElement && activeElement !== document.body && !document.getElementById('pattern-edit').contains(activeElement)) {
+      this.viewReturnFocus = activeElement;
+    }
     document.getElementById('pattern-list').classList.add('d-none');
     document.getElementById('pattern-edit').classList.remove('d-none');
     
@@ -2025,7 +2092,8 @@ setupEventListeners() {
       document.getElementById('pattern-id').value = pattern.id;
       document.getElementById('remote').value = pattern.remote || '';
       document.getElementById('pattern').value = pattern.pattern;
-      document.getElementById('series').value = pattern.series;
+      const seriesSelect = document.getElementById('series');
+      this.preserveSelectValue(seriesSelect, pattern.series, `${pattern.series}（已保存）`);
       document.getElementById('language').value = pattern.language;
       document.getElementById('quality').value = pattern.quality;
       document.getElementById('offset').value = pattern.offset || 0;
@@ -2047,6 +2115,8 @@ setupEventListeners() {
       
       document.getElementById('proxy-url-box').classList.add('d-none');
     }
+
+    document.getElementById('edit-title').focus({ preventScroll: true });
   }
 
   showPatternList() {
@@ -2054,6 +2124,10 @@ setupEventListeners() {
     document.getElementById('pattern-list').classList.remove('d-none');
     this.currentPatternId = null;
     this.updatePageTitle('Patterns');
+    const returnFocus = this.viewReturnFocus;
+    this.viewReturnFocus = null;
+    if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
+    else document.getElementById('search-input')?.focus({ preventScroll: true });
   }
 
   async savePattern(e) {
@@ -2080,6 +2154,7 @@ setupEventListeners() {
       const method = this.currentPatternId ? 'PUT' : 'POST';
       
       await this.apiRequest(url, { method, body: JSON.stringify(pattern) });
+      this.viewReturnFocus = null;
       this.showPatternList();
       this.loadPatterns();
       Toast.success('Pattern 已保存');
@@ -2351,66 +2426,39 @@ setupEventListeners() {
       // 创建遮罩层
       const overlay = document.createElement('div');
       overlay.id = 'import-modal-overlay';
-      overlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      `;
+      overlay.className = 'confirm-overlay import-overlay';
       
       // 创建对话框
       const modal = document.createElement('div');
       modal.id = 'import-modal';
+      modal.className = 'confirm-dialog import-dialog';
       modal.setAttribute('role', 'dialog');
       modal.setAttribute('aria-modal', 'true');
       modal.setAttribute('aria-labelledby', 'import-modal-title');
-      modal.style.cssText = `
-        background: white;
-        padding: 2rem;
-        border-radius: 0.5rem;
-        max-width: 500px;
-        width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        border: 1px solid #dee2e6;
-      `;
+      modal.setAttribute('aria-describedby', 'import-modal-description');
       
       modal.innerHTML = `
-        <div style="margin-bottom: 1.5rem;">
-          <h3 id="import-modal-title" style="margin: 0 0 0.5rem 0; color: #495057; font-weight: 600;">选择导入模式</h3>
-          <p style="margin: 0; color: #6c757d;">请选择如何导入patterns数据：</p>
+        <div class="import-dialog-heading">
+          <h2 id="import-modal-title">选择导入模式</h2>
+          <p id="import-modal-description">选择如何处理现有 Pattern 数据。</p>
         </div>
         
-        <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-          <button type="button" data-import-action="append" class="btn btn-primary" style="width: 100%; text-align: left; padding: 0.75rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong>追加模式</strong>
-            </div>
-            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
-              将新数据添加到现有patterns之后，保留原有ID
-            </small>
+        <div class="import-mode-options">
+          <button type="button" data-import-action="append" class="import-mode-option">
+            <i class="bi bi-plus-circle" aria-hidden="true"></i>
+            <strong>追加模式</strong>
+            <small>在现有 Pattern 后追加新数据并保留原有 ID。</small>
           </button>
           
-          <button type="button" data-import-action="overwrite" class="btn btn-warning" style="width: 100%; text-align: left; padding: 0.75rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong>覆盖模式</strong>
-            </div>
-            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
-              删除所有现有数据，重新导入并重置ID从1开始
-            </small>
+          <button type="button" data-import-action="overwrite" class="import-mode-option">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+            <strong>覆盖模式</strong>
+            <small>替换全部现有数据，并从 1 重新生成 ID。</small>
           </button>
         </div>
         
-        <div style="text-align: right;">
-          <button type="button" data-import-action="cancel" class="btn btn-secondary">取消</button>
+        <div class="import-dialog-actions">
+          <button type="button" data-import-action="cancel" class="btn btn-outline-secondary">取消</button>
         </div>
       `;
       
@@ -2508,6 +2556,7 @@ setupEventListeners() {
   renderPatternLoadError() {
     const state = document.createElement('div');
     state.className = 'load-error-state';
+    state.setAttribute('role', 'alert');
     state.innerHTML = '<i class="bi bi-cloud-slash" aria-hidden="true"></i><h2>加载失败</h2><p></p><button type="button" class="btn btn-primary retry-pattern-load"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>重试</button>';
     state.querySelector('p').textContent = this.patternLoadError;
     state.querySelector('.retry-pattern-load').addEventListener('click', () => this.loadPatterns());

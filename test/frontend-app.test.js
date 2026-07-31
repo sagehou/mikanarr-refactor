@@ -16,6 +16,9 @@ test('refined application shell preserves semantic login and navigation structur
   const document = dom.window.document;
   assert.ok(document.getElementById('login-container').classList.contains('login-shell'));
   assert.equal(document.querySelector('#login-container > .login-ambient').getAttribute('aria-hidden'), 'true');
+  assert.ok(document.querySelector('.login-brand .login-mark'));
+  assert.equal(document.getElementById('username').autocomplete, 'username');
+  assert.equal(document.getElementById('password').autocomplete, 'current-password');
   assert.ok(document.getElementById('main-container').classList.contains('app-shell'));
   assert.ok(document.querySelector('nav').classList.contains('app-navbar'));
   assert.ok(document.querySelector('#main-container > .app-content'));
@@ -35,6 +38,9 @@ test('Pattern workspace groups summary discovery and data actions', () => {
   );
   assert.ok(document.querySelector('.pattern-toolbar-discovery #search-input'));
   assert.ok(document.querySelector('.pattern-toolbar-actions #new-pattern-btn'));
+  assert.equal(document.getElementById('workspace-notice').getAttribute('role'), 'status');
+  assert.equal(document.getElementById('view-card-btn').getAttribute('aria-pressed'), 'true');
+  assert.equal(document.getElementById('view-table-btn').getAttribute('aria-pressed'), 'false');
   assert.ok(document.getElementById('batch-actions').classList.contains('d-none'));
   assert.equal(document.querySelector('#filter-status').hasAttribute('style'), false);
   assert.equal(document.querySelector('#search-input').hasAttribute('style'), false);
@@ -56,6 +62,8 @@ test('Pattern editor groups four workflows and a responsive preview', () => {
   for (const section of sections) assert.ok(document.getElementById(section.getAttribute('aria-labelledby')));
   assert.ok(document.querySelector('.editor-preview-panel #rss-preview'));
   assert.ok(document.querySelector('.editor-actions #save-btn'));
+  assert.equal(document.querySelector('.editor-actions').getAttribute('role'), 'group');
+  assert.equal(document.getElementById('edit-title').tabIndex, -1);
   assert.equal(document.querySelector('.editor-preview-panel').hasAttribute('style'), false);
   dom.window.close();
 });
@@ -64,6 +72,18 @@ function installDom(body) {
   const dom = new JSDOM(`<!doctype html><body>${body}</body>`, {
     url: 'https://mikanarr.test/'
   });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.navigator = dom.window.navigator;
+  global.DOMParser = dom.window.DOMParser;
+  global.Event = dom.window.Event;
+  global.localStorage = dom.window.localStorage;
+  return dom;
+}
+
+function installFullDom() {
+  const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
+  const dom = new JSDOM(html, { url: 'https://mikanarr.test/' });
   global.window = dom.window;
   global.document = dom.window.document;
   global.navigator = dom.window.navigator;
@@ -102,6 +122,84 @@ function makeApp() {
   app.sonarrOptions = { rootFolders: [], qualityProfiles: [] };
   return app;
 }
+
+test('theme updates Bootstrap, browser chrome, and its icon together', () => {
+  const dom = installFullDom();
+  const app = makeApp();
+
+  app.applyTheme('dark');
+
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  assert.equal(document.documentElement.dataset.bsTheme, 'dark');
+  assert.equal(document.querySelector('meta[name="theme-color"]').content, '#241c18');
+  assert.ok(document.querySelector('#theme-toggle .bi-sun'));
+  cleanupDom(dom);
+});
+
+test('Pattern editor moves focus in and restores its trigger on return', () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const trigger = document.getElementById('new-pattern-btn');
+  trigger.focus();
+
+  app.showPatternEdit();
+  assert.equal(document.activeElement, document.getElementById('edit-title'));
+  assert.equal(document.getElementById('pattern-list').classList.contains('d-none'), true);
+
+  app.showPatternList();
+  assert.equal(document.activeElement, trigger);
+  assert.equal(document.getElementById('pattern-edit').classList.contains('d-none'), true);
+  cleanupDom(dom);
+});
+
+test('saving a Pattern returns focus to the persistent search control', async () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const transientTrigger = document.createElement('button');
+  document.getElementById('pattern-card-view').appendChild(transientTrigger);
+  transientTrigger.focus();
+  const pattern = { id: 7, series: 'Stored Series', season: '2', pattern: '(?<episode>\\d+)', language: 'Chinese', quality: 'WEBDL 1080p', offset: 0, releasegroup: '', remote: '' };
+  app.currentPatternId = pattern.id;
+  app.showPatternEdit(pattern);
+  app.apiRequest = async () => ({ ok: true });
+  app.loadPatterns = () => transientTrigger.remove();
+
+  await app.savePattern({ preventDefault() {} });
+
+  assert.equal(document.activeElement, document.getElementById('search-input'));
+  assert.equal(transientTrigger.isConnected, false);
+  cleanupDom(dom);
+});
+
+test('unconfigured Sonarr is a neutral workspace state with localized guidance', () => {
+  const dom = installFullDom();
+  const app = makeApp();
+  const error = Object.assign(new Error('Sonarr proxy not configured'), { code: 'SONARR_NOT_CONFIGURED' });
+  app.currentView = 'card';
+  app.allPatterns = [{ id: 1, series: 'Series', season: '1', pattern: '(?<episode>\\d+)', language: 'Chinese', quality: 'WEBDL 1080p', releasegroup: '', remote: '' }];
+  app.seriesLoadError = error;
+
+  app.renderSeriesLoadError(error);
+  app.filterPatterns('');
+
+  const notice = document.getElementById('workspace-notice');
+  assert.equal(notice.classList.contains('d-none'), false);
+  assert.match(notice.textContent, /Sonarr 尚未连接/);
+  assert.equal(notice.textContent.includes('proxy not configured'), false);
+  assert.equal(document.getElementById('pattern-issue-count').textContent, '0');
+  assert.equal(document.querySelectorAll('.pattern-card--unavailable').length, 1);
+  assert.equal(document.querySelector('.pattern-card-status-badge').textContent, '等待 Sonarr');
+
+  app.showPatternEdit(app.allPatterns[0]);
+  assert.equal(document.getElementById('series').value, 'Series');
+  assert.equal(document.getElementById('season').value, '1');
+  assert.match(document.querySelector('#series option:checked').textContent, /已保存/);
+  assert.match(document.querySelector('#season option:checked').textContent, /已保存/);
+
+  app.clearSeriesLoadError();
+  assert.equal(notice.classList.contains('d-none'), true);
+  cleanupDom(dom);
+});
 
 test('older TMDB refresh cannot replace newer Series options or selection', async () => {
   const dom = installDom(`
@@ -464,7 +562,10 @@ test('latest Pattern loading survives Series, filter, and view renders until it 
   const assertBothViewsLoading = () => {
     assert.equal(document.querySelectorAll('.pattern-card-skeleton').length, 6);
     assert.equal(document.querySelectorAll('#pattern-table-body tr').length, 5);
+    assert.equal(document.querySelector('#pattern-table-body tr').children.length, 10);
     assert.equal(document.querySelectorAll('#pattern-table-body .skeleton').length > 0, true);
+    assert.equal(document.getElementById('pattern-card-view').getAttribute('aria-busy'), 'true');
+    assert.equal(document.getElementById('pattern-table-view').getAttribute('aria-busy'), 'true');
     assert.equal(document.getElementById('pattern-card-view').textContent.includes('Stale Series'), false);
     assert.equal(document.getElementById('pattern-table-body').textContent.includes('Stale Series'), false);
   };
@@ -493,6 +594,8 @@ test('latest Pattern loading survives Series, filter, and view renders until it 
   assertBothViewsLoading();
 
   app.switchView('table');
+  assert.equal(document.getElementById('view-table-btn').getAttribute('aria-pressed'), 'true');
+  assert.equal(document.getElementById('view-card-btn').getAttribute('aria-pressed'), 'false');
   assertBothViewsLoading();
 
   document.getElementById('search-input').value = '';
@@ -500,8 +603,12 @@ test('latest Pattern loading survives Series, filter, and view renders until it 
   await newerLoad;
 
   assert.equal(app.patternLoadingGeneration, null);
+  assert.equal(document.getElementById('pattern-card-view').getAttribute('aria-busy'), 'false');
+  assert.equal(document.getElementById('pattern-table-view').getAttribute('aria-busy'), 'false');
   assert.equal(document.querySelector('#pattern-table-body .pattern-id').textContent, '2');
   app.switchView('card');
+  assert.equal(document.getElementById('view-card-btn').getAttribute('aria-pressed'), 'true');
+  assert.equal(document.getElementById('view-table-btn').getAttribute('aria-pressed'), 'false');
   assert.equal(document.querySelector('.pattern-card').dataset.patternId, '2');
   cleanupDom(dom);
 });
@@ -1075,7 +1182,8 @@ test('Pattern reload reconciles selection and clears the active view after failu
     selected: document.getElementById('pattern-summary-selected').textContent,
     batchHidden: document.getElementById('batch-actions').classList.contains('d-none'),
     selectAll: document.getElementById('select-all').checked,
-    cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length
+    cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length,
+    busy: document.getElementById('pattern-card-view').getAttribute('aria-busy')
   };
 
   const originalError = console.error;
@@ -1095,11 +1203,12 @@ test('Pattern reload reconciles selection and clears the active view after failu
     issues: document.getElementById('pattern-issue-count').textContent,
     cardSkeletons: document.querySelectorAll('.pattern-card-skeleton').length,
     loadError: Boolean(document.querySelector('#pattern-card-view > .load-error-state')),
+    busy: document.getElementById('pattern-card-view').getAttribute('aria-busy'),
     toast: document.querySelector('.toast-error .toast-content')?.textContent
   };
 
   assert.deepEqual({ duringLoading, afterFailure }, {
-    duringLoading: { loadingGeneration: 1, selected: '0', batchHidden: true, selectAll: false, cardSkeletons: 6 },
+    duringLoading: { loadingGeneration: 1, selected: '0', batchHidden: true, selectAll: false, cardSkeletons: 6, busy: 'true' },
     afterFailure: {
       loadingGeneration: null,
       allPatterns: [],
@@ -1108,6 +1217,7 @@ test('Pattern reload reconciles selection and clears the active view after failu
       issues: '0',
       cardSkeletons: 0,
       loadError: true,
+      busy: 'false',
       toast: '加载 Patterns 失败'
     }
   });

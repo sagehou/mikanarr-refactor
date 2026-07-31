@@ -26,6 +26,8 @@
       const safeType = Object.hasOwn(toastIcons, type) ? type : 'info';
       const toast = document.createElement('div');
       toast.className = `toast-item toast-${safeType}`;
+      toast.setAttribute('role', ['error', 'warning'].includes(safeType) ? 'alert' : 'status');
+      toast.setAttribute('aria-atomic', 'true');
 
       const icon = document.createElement('i');
       icon.className = `bi ${toastIcons[safeType]} toast-icon`;
@@ -68,10 +70,10 @@
         const overlay = document.createElement('div');
         overlay.className = 'confirm-overlay';
         overlay.innerHTML = `
-          <div class="confirm-dialog" role="dialog" aria-modal="true">
+          <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
             <div class="confirm-dialog-icon ${safeType}"><i class="bi ${safeType === 'warning' ? 'bi-question-circle-fill' : 'bi-exclamation-triangle-fill'}" aria-hidden="true"></i></div>
-            <div class="confirm-dialog-title"></div>
-            <div class="confirm-dialog-message"></div>
+            <div class="confirm-dialog-title" id="confirm-dialog-title"></div>
+            <div class="confirm-dialog-message" id="confirm-dialog-message"></div>
             <div class="confirm-dialog-buttons">
               <button type="button" class="btn btn-secondary" id="confirm-cancel"></button>
               <button type="button" class="btn btn-${safeType}" id="confirm-ok"></button>
@@ -85,24 +87,39 @@
         document.body.appendChild(overlay);
 
         let settled = false;
+        const previousFocus = document.activeElement;
+        const cancelButton = overlay.querySelector('#confirm-cancel');
+        const confirmButton = overlay.querySelector('#confirm-ok');
         const handleEscape = event => {
-          if (event.key === 'Escape') cleanup(false);
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            cleanup(false);
+          } else if (event.key === 'Tab') {
+            if (event.shiftKey && document.activeElement === cancelButton) {
+              event.preventDefault();
+              confirmButton.focus();
+            } else if (!event.shiftKey && document.activeElement === confirmButton) {
+              event.preventDefault();
+              cancelButton.focus();
+            }
+          }
         };
         const cleanup = result => {
           if (settled) return;
           settled = true;
           document.removeEventListener('keydown', handleEscape);
           overlay.remove();
+          if (previousFocus?.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
           resolve(result);
         };
 
-        overlay.querySelector('#confirm-ok').addEventListener('click', () => cleanup(true));
-        overlay.querySelector('#confirm-cancel').addEventListener('click', () => cleanup(false));
+        confirmButton.addEventListener('click', () => cleanup(true));
+        cancelButton.addEventListener('click', () => cleanup(false));
         overlay.addEventListener('click', event => {
           if (event.target === overlay) cleanup(false);
         });
         document.addEventListener('keydown', handleEscape);
-        overlay.querySelector('#confirm-cancel').focus();
+        cancelButton.focus();
       });
     }
   }

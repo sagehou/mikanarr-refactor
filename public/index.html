@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-bs-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,21 +19,25 @@
     <div id="login-container" class="login-container login-shell d-none">
       <div class="login-ambient" aria-hidden="true"></div>
       <div class="login-box login-panel">
-        <div class="text-center mb-4">
-          <h2><i class="bi bi-cloud-download"></i> Mikanarr</h2>
-          <p class="text-muted">Mikan to Sonarr Bridge</p>
+        <div class="login-brand mb-4">
+          <span class="login-mark" aria-hidden="true"><i class="bi bi-cloud-download"></i></span>
+          <div>
+            <p class="login-kicker">Mikan × Sonarr</p>
+            <h1 class="login-title">Mikanarr</h1>
+            <p class="login-subtitle">轻松管理你的动漫订阅自动化</p>
+          </div>
         </div>
         <form id="login-form">
           <div class="mb-3">
             <label for="username" class="form-label">用户名</label>
-            <input type="text" class="form-control" id="username" required>
+            <input type="text" class="form-control" id="username" autocomplete="username" required>
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">密码</label>
-            <input type="password" class="form-control" id="password" required>
+            <input type="password" class="form-control" id="password" autocomplete="current-password" required>
           </div>
-          <div id="login-error" class="alert alert-danger d-none"></div>
-          <button type="submit" class="btn btn-primary w-100">登录</button>
+          <div id="login-error" class="alert alert-danger d-none" role="alert" aria-live="assertive"></div>
+          <button type="submit" class="btn btn-primary login-submit w-100"><span>进入工作台</span><i class="bi bi-arrow-right-short" aria-hidden="true"></i></button>
           
           <div id="oidc-login-container" class="mt-3 d-none">
             <div class="login-divider"><span>或</span></div>
@@ -75,14 +79,15 @@
       <main class="container app-content">
 <div id="pattern-list" class="pattern-list">
           <header class="pattern-page-heading">
-            <div><p class="eyebrow">订阅规则</p><h1>Patterns</h1></div>
+            <div class="page-heading-copy"><p class="eyebrow">订阅规则</p><h1>Patterns</h1><p class="page-lead">集中管理匹配、映射与追更状态。</p></div>
             <div class="pattern-summary" aria-label="Pattern 摘要">
               <span class="pattern-summary-chip"><strong id="pattern-total-count" class="pattern-summary-value">0</strong>总数</span>
               <span class="pattern-summary-chip pattern-summary-chip--warning"><strong id="pattern-issue-count" class="pattern-summary-value">0</strong>需关注</span>
               <span class="pattern-summary-chip"><strong id="pattern-summary-selected" class="pattern-summary-value">0</strong>已选择</span>
             </div>
           </header>
-          <div class="pattern-toolbar">
+          <div id="workspace-notice" class="workspace-notice d-none" role="status" aria-live="polite"></div>
+          <div class="pattern-toolbar" aria-label="Pattern 工具栏">
             <div class="pattern-toolbar-discovery">
               <label class="search-control" for="search-input" aria-label="搜索 Patterns"><i class="bi bi-search" aria-hidden="true"></i><input type="search" class="form-control" id="search-input" placeholder="搜索系列、正则或字幕组"></label>
               <label class="filter-control" for="filter-status">
@@ -95,8 +100,8 @@
                 </select>
               </label>
               <div class="btn-group view-toggle" role="group" aria-label="视图切换">
-                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图" aria-label="卡片视图"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
-                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图" aria-label="表格视图"><i class="bi bi-list" aria-hidden="true"></i></button>
+                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图" aria-label="卡片视图" aria-pressed="true"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图" aria-label="表格视图" aria-pressed="false"><i class="bi bi-list" aria-hidden="true"></i></button>
               </div>
             </div>
             <div class="pattern-toolbar-actions">
@@ -146,7 +151,7 @@
 
         <div id="pattern-edit" class="pattern-edit view-panel d-none">
           <header class="editor-heading">
-            <div><p class="eyebrow">Pattern 配置</p><h1 id="edit-title">新建 Pattern</h1></div>
+            <div class="page-heading-copy"><p class="eyebrow">Pattern 配置</p><h1 id="edit-title" tabindex="-1">新建 Pattern</h1><p class="page-lead">按步骤完成来源、匹配、映射与输出设置。</p></div>
             <button class="btn btn-outline-secondary" id="back-btn"><i class="bi bi-arrow-left" aria-hidden="true"></i>返回</button>
           </header>
 
@@ -287,7 +292,7 @@
                   </div>
                 </section>
 
-                <div class="editor-actions">
+                <div class="editor-actions" role="group" aria-label="Pattern 编辑操作">
                   <button type="submit" class="btn btn-primary" id="save-btn">
                     <i class="bi bi-check-lg"></i> 保存
                   </button>
