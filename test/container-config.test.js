@@ -40,7 +40,7 @@ test('production dependency floors and exact test dependencies stay patched', ()
 
 test('Dockerfile defines a pinned production-only non-root healthy runtime', () => {
   const dockerfile = read('Dockerfile');
-  assert.match(dockerfile, /^FROM node:22\.23\.1-alpine3\.24$/m);
+  assert.match(dockerfile, /^FROM node:22\.23\.1-alpine3\.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2$/m);
   assert.match(dockerfile, /^COPY package\*\.json \.npmrc \.\/$/m);
   assert.match(dockerfile, /npm install --global --ignore-scripts npm@11\.18\.0/);
   assert.match(dockerfile, /test "\$\(npm --version\)" = "11\.18\.0"/);
@@ -81,6 +81,11 @@ test('Compose defaults to GHCR, loopback binding, root env, persistent data, and
     driver: 'json-file',
     options: { 'max-size': '10m', 'max-file': '3' }
   });
+  assert.equal(service.read_only, true);
+  assert.deepEqual(service.tmpfs, ['/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777']);
+  assert.deepEqual(service.cap_drop, ['ALL']);
+  assert.deepEqual(service.security_opt, ['no-new-privileges:true']);
+  assert.equal(service.pids_limit, 128);
 });
 
 test('optional Traefik override parameterizes the host and external network', () => {
@@ -116,8 +121,9 @@ test('backup and restore recipes protect archives and are valid shell', () => {
   assert.match(restore, /backup="backups\/mikanarr-data-before-restore-\$\(date \+%Y%m%d-%H%M%S\)\.tar\.gz"/);
   assert.match(restore, /umask 077/);
   assert.match(restore, /test -f "\$restore"/);
-  assert.match(restore, /docker compose run --rm --no-deps --user root -v "\$restore:\/backup\.tar\.gz:ro"[^\n]+tar -tzf \/backup\.tar\.gz/);
+  assert.match(restore, /docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE -v "\$restore:\/backup\.tar\.gz:ro"[^\n]+tar -tzf \/backup\.tar\.gz/);
   assert.match(restore, /grep -Eq "\(\^\|\/\)database\\\.sqlite\$"/);
+  assert.match(restore, /--user root --cap-add DAC_OVERRIDE --cap-add CHOWN[^\n]+chown -R node:node \/app\/data/);
   assert.match(restore, /\( set -C; docker compose run[^\n]+> "\$backup" \)/);
   assert.ok(restore.indexOf('> "$backup"') < restore.indexOf('find /app/data -mindepth 1'));
   assert.ok(restore.indexOf('tar -tzf /backup.tar.gz') < restore.indexOf('find /app/data -mindepth 1'));
@@ -132,6 +138,7 @@ test('legacy migration protects its backup archive', () => {
   const migration = blocks.find(block => block.includes('legacy-data-before-volume'));
   assert.ok(migration, 'legacy migration command block');
   assert.match(migration, /umask 077/);
+  assert.match(migration, /--user root --cap-add DAC_OVERRIDE --cap-add CHOWN[^\n]+chown -R node:node \/app\/data/);
   const syntax = spawnSync('bash', ['-n'], { input: migration, encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr);
 });
@@ -157,11 +164,11 @@ test('GitHub checks gate image publishing and workflow edits trigger releases', 
   }
 });
 
-test('Dependabot checks npm and GitHub Actions every week', () => {
+test('Dependabot checks npm, GitHub Actions, and Docker every week', () => {
   const config = parseYaml('.github/dependabot.yml');
   assert.deepEqual(
     config.updates.map(update => [update['package-ecosystem'], update.directory, update.schedule.interval]),
-    [['npm', '/', 'weekly'], ['github-actions', '/', 'weekly']]
+    [['npm', '/', 'weekly'], ['github-actions', '/', 'weekly'], ['docker', '/', 'weekly']]
   );
 });
 

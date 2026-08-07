@@ -14,7 +14,7 @@ docker compose pull
 docker compose up -d --wait
 ```
 
-The image is `ghcr.io/sagehou/mikanarr-refactor:latest` unless `IMAGE_NAME` is set. For a production deployment, set `IMAGE_NAME` in `.env` to an existing release or commit-SHA tag from the registry and record that immutable choice; reserve `latest` for evaluation. Compose stores SQLite and generated session-signing keys in the named `mikanarr-data` volume mounted at `/app/data`. The volume is initialized for the non-root application user; there is no host `data/` directory to create for a new deployment.
+The image is `ghcr.io/sagehou/mikanarr-refactor:latest` unless `IMAGE_NAME` is set. For a production deployment, set `IMAGE_NAME` in `.env` to an existing release or commit-SHA tag from the registry and record that immutable choice; reserve `latest` for evaluation. Compose runs with a read-only root filesystem, no Linux capabilities, an ephemeral `/tmp`, and a process limit; only the named `mikanarr-data` volume mounted at `/app/data` remains writable. The volume is initialized for the non-root application user; there is no host `data/` directory to create for a new deployment.
 
 The published port is loopback-only by default (`127.0.0.1:12306`). Put a TLS-terminating reverse proxy in front of it for normal use and leave `COOKIE_SECURE=true`. To intentionally expose it on a trusted LAN, set `BIND_ADDRESS=0.0.0.0` in root `.env`, apply firewall controls, and restart with `docker compose up -d --wait`.
 
@@ -75,13 +75,13 @@ set -eu
 umask 077
 restore="$PWD/backups/mikanarr-data-YYYY-MM-DD.tar.gz"
 test -f "$restore"
-docker compose run --rm --no-deps --user root -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; tar -tzf /backup.tar.gz > /tmp/backup.list; grep -Eq "(^|/)database\.sqlite$" /tmp/backup.list'
+docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; tar -tzf /backup.tar.gz > /tmp/backup.list; grep -Eq "(^|/)database\.sqlite$" /tmp/backup.list'
 docker compose stop mikanarr
 mkdir -p backups
 backup="backups/mikanarr-data-before-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
 ( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
 test -s "$backup"
-docker compose run --rm --no-deps --user root -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
+docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE --cap-add CHOWN -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
 docker compose up -d --wait
 )
 ```

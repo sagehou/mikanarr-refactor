@@ -47,7 +47,7 @@ tar -C ./data -czf "$backup" .
 test -f .env || cp .env.example .env
 docker compose pull
 docker compose create mikanarr
-docker compose run --rm --no-deps --user root -v "$PWD/data:/legacy:ro" --entrypoint sh mikanarr -c 'set -eu; test -f /legacy/database.sqlite; test -z "$(find /app/data -mindepth 1 -maxdepth 1 -print -quit)"; for name in database.sqlite database.sqlite-wal database.sqlite-shm jwt.key jwt.key.pub; do if [ -e "/legacy/$name" ]; then cp -p "/legacy/$name" "/app/data/$name"; fi; done; chown -R node:node /app/data'
+docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE --cap-add CHOWN -v "$PWD/data:/legacy:ro" --entrypoint sh mikanarr -c 'set -eu; test -f /legacy/database.sqlite; test -z "$(find /app/data -mindepth 1 -maxdepth 1 -print -quit)"; for name in database.sqlite database.sqlite-wal database.sqlite-shm jwt.key jwt.key.pub; do if [ -e "/legacy/$name" ]; then cp -p "/legacy/$name" "/app/data/$name"; fi; done; chown -R node:node /app/data'
 docker compose up -d --wait
 )
 ```
