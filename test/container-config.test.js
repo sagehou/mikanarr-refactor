@@ -119,7 +119,7 @@ test('optional Traefik override parameterizes the host and external network', ()
   assert.equal(service.labels['traefik.enable'], 'true');
   assert.equal(service.labels['traefik.docker.network'], '${TRAEFIK_NETWORK:-traefik}');
   assert.equal(service.labels['traefik.http.routers.mikanarr.rule'], 'Host(`${MIKANARR_HOST:?set MIKANARR_HOST}`)');
-  assert.equal(service.labels['traefik.http.routers.mikanarr.tls'], true);
+  assert.equal(service.labels['traefik.http.routers.mikanarr.tls'], 'true');
   assert.ok(service.networks.includes('traefik'));
   assert.deepEqual(compose.networks.traefik, { external: true, name: '${TRAEFIK_NETWORK:-traefik}' });
 });
