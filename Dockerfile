@@ -3,9 +3,11 @@ FROM node:24.19.0-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31
 WORKDIR /app
 
 COPY package*.json .npmrc ./
-RUN npm install --global --ignore-scripts npm@11.18.0 \
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+    && npm install --global --ignore-scripts npm@11.18.0 \
     && test "$(npm --version)" = "11.18.0" \
-    && npm ci --omit=dev
+    && npm ci --omit=dev \
+    && apk del .build-deps
 
 COPY public ./public
 COPY server ./server
