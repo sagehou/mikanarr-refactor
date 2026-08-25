@@ -13,13 +13,57 @@ docker compose up -d --wait
 
 The application owns a named `mikanarr-data` volume mounted at `/app/data`. It is initialized for the non-root `node` user. The default host binding is loopback; use a TLS reverse proxy for ordinary access. Only set `BIND_ADDRESS=0.0.0.0` for consciously exposed, firewall-protected LAN use. Keep `COOKIE_SECURE=true` behind TLS; `false` is for local HTTP development/testing only.
 
-If verification fails, set `PREVIOUS_IMAGE` to the exact previously known-good tag or digest and roll back the application image. If an older application cannot read a migrated database, restore the pre-upgrade data archive by following [README.md](README.md).
+## Back up and restore `mikanarr-data`
+
+Back up the named volume while the application is stopped so the SQLite files are consistent. The service is started again automatically when the backup command exits, including on failure:
+
+```bash
+(
+set -eu
+umask 077
+mkdir -p backups
+backup="backups/mikanarr-data-$(date +%Y%m%d-%H%M%S).tar.gz"
+trap 'docker compose up -d --wait' EXIT
+docker compose stop mikanarr
+( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
+test -s "$backup"
+docker compose up -d --wait
+trap - EXIT
+)
+```
+
+To restore, first point `restore` at the intended archive. The command validates that the archive contains the SQLite database, stops the service, makes a fresh pre-restore backup, replaces the named-volume contents, restores `node:node` ownership, and starts the service again:
+
+```bash
+(
+set -eu
+umask 077
+restore="$PWD/backups/mikanarr-data-YYYYMMDD-HHMMSS.tar.gz"
+test -f "$restore"
+docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; tar -tzf /backup.tar.gz > /tmp/backup.list; grep -Eq "(^|/)database\.sqlite$" /tmp/backup.list'
+docker compose stop mikanarr
+mkdir -p backups
+backup="backups/mikanarr-data-before-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
+( set -C; docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'tar -C /app/data -czf - .' > "$backup" )
+test -s "$backup"
+docker compose run --rm --no-deps --user root --cap-add DAC_OVERRIDE --cap-add CHOWN -v "$restore:/backup.tar.gz:ro" --entrypoint sh mikanarr -c 'set -eu; find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /app/data -xzf /backup.tar.gz; chown -R node:node /app/data'
+docker compose up -d --wait
+)
+```
+
+Keep the backup until the upgraded or restored instance has been verified. Treat these archives as secrets because they contain the database and application authentication keys.
+
+## Roll back an application image
+
+If verification fails, set `PREVIOUS_IMAGE` to the exact previously known-good tag or digest and roll back the application image. If an older application cannot read a migrated database, restore the pre-upgrade data archive using the restore procedure above.
 
 ```bash
 test -n "${PREVIOUS_IMAGE:-}"
 IMAGE_NAME="$PREVIOUS_IMAGE" docker compose pull
 IMAGE_NAME="$PREVIOUS_IMAGE" docker compose up -d --wait --force-recreate
 ```
+
+Persist the selected `IMAGE_NAME` in `.env` after verification so later Compose commands do not drift back to `latest`.
 
 ## Migrate a legacy `./data` bind mount
 
@@ -52,7 +96,7 @@ docker compose up -d --wait
 )
 ```
 
-Do not restart the legacy service between `docker compose down` and the copy step; that would make the archive and copied SQLite state diverge. Keep the archive until the upgraded instance has been verified. Do not rerun the copy command against an existing populated volume: its empty-destination check is intentional. If a migration must be retried, stop the service and make a fresh named-volume backup as described in [README.md](README.md) before deciding how to restore it. None of the migration commands deletes the source directory or a volume.
+Do not restart the legacy service between `docker compose down` and the copy step; that would make the archive and copied SQLite state diverge. Keep the archive until the upgraded instance has been verified. Do not rerun the copy command against an existing populated volume: its empty-destination check is intentional. If a migration must be retried, stop the service and make a fresh named-volume backup using the procedure above before deciding how to restore it. None of the migration commands deletes the source directory or a volume.
 
 ## Authentication migration
 
@@ -74,4 +118,10 @@ OIDC needs all four issuer/client/secret/redirect values and at least one allowe
 
 ## Rotate exposed credentials
 
-Never publish Mikan feed URLs/tokens, Sonarr keys, `.env`, database archives, or JWT private keys. For an exposure, revoke/regenerate the Mikan feed token and update the matching pattern; issue a new Sonarr API key and update root `.env`; then back up and regenerate `/app/data/jwt.key` plus `/app/data/jwt.key.pub` following [README.md](README.md). JWT-key regeneration invalidates all sessions.
+Never publish Mikan feed URLs/tokens, Sonarr keys, `.env`, database archives, or JWT private keys. For an exposure, revoke/regenerate the Mikan feed token and update the matching pattern; issue a new Sonarr API key and update root `.env`; then make a named-volume backup and regenerate `/app/data/jwt.key` plus `/app/data/jwt.key.pub`. JWT-key regeneration invalidates all sessions.
+
+```bash
+docker compose stop mikanarr
+docker compose run --rm --no-deps --entrypoint sh mikanarr -c 'rm -f /app/data/jwt.key /app/data/jwt.key.pub'
+docker compose up -d --wait
+```
