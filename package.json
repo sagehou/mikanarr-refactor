@@ -4,7 +4,7 @@
   "description": "Mikanarr Refactor - Bridge between Mikan Anime and Sonarr",
   "license": "ISC",
   "engines": {
-    "node": ">=22.13.0 <23"
+    "node": ">=22.13.0 <25"
   },
   "packageManager": "npm@11.18.0",
   "allowScripts": {
