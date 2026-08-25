@@ -1,0 +1,54 @@
+name: Fix UI redesign test wiring
+
+on:
+  push:
+    branches:
+      - feat/ui-subscription-dashboard
+    paths:
+      - .github/workflows/fix-ui-redesign-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ui-subscription-dashboard
+          fetch-depth: 0
+
+      - name: Update asset assertion and idempotent boot
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          test_path = Path('test/frontend-app.test.js')
+          text = test_path.read_text()
+          old = "    '/js/api.js',\n    '/js/app.js'\n  ]);"
+          new = "    '/js/api.js',\n    '/js/app.js',\n    '/js/redesign.js'\n  ]);"
+          if old not in text:
+              raise SystemExit('frontend asset assertion anchor not found')
+          test_path.write_text(text.replace(old, new, 1))
+
+          redesign_path = Path('public/js/redesign.js')
+          text = redesign_path.read_text()
+          old = "  document.addEventListener('DOMContentLoaded', () => {\n    enhanceStaticUi();\n\n    document.getElementById('batch-update-btn')?.addEventListener('click', () => window.mikanarrApp?.batchUpdateSelection());\n    document.getElementById('batch-copy-btn')?.addEventListener('click', () => window.mikanarrApp?.batchCopyLinks());\n    document.getElementById('batch-clear-btn')?.addEventListener('click', () => window.mikanarrApp?.clearBatchSelection());\n\n    document.getElementById('pattern-card-view')?.addEventListener('change', event => {\n      if (event.target.classList.contains('card-checkbox')) window.mikanarrApp?.updateBatchUI();\n    });\n  });"
+          new = "  const bootRedesign = () => {\n    enhanceStaticUi();\n\n    document.getElementById('batch-update-btn')?.addEventListener('click', () => window.mikanarrApp?.batchUpdateSelection());\n    document.getElementById('batch-copy-btn')?.addEventListener('click', () => window.mikanarrApp?.batchCopyLinks());\n    document.getElementById('batch-clear-btn')?.addEventListener('click', () => window.mikanarrApp?.clearBatchSelection());\n\n    document.getElementById('pattern-card-view')?.addEventListener('change', event => {\n      if (event.target.classList.contains('card-checkbox')) window.mikanarrApp?.updateBatchUI();\n    });\n  };\n\n  if (document.readyState === 'loading') {\n    document.addEventListener('DOMContentLoaded', bootRedesign, { once: true });\n  } else {\n    bootRedesign();\n  }"
+          if old not in text:
+              raise SystemExit('redesign boot anchor not found')
+          redesign_path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/fix-ui-redesign-tests.yml
+
+      - name: Validate syntax
+        run: node --check public/js/redesign.js
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/js/redesign.js test/frontend-app.test.js .github/workflows/fix-ui-redesign-tests.yml
+          git commit -m "fix(ui): align redesign boot and asset checks"
+          git push origin HEAD:feat/ui-subscription-dashboard
