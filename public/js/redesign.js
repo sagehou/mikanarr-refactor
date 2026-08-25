@@ -277,7 +277,7 @@
 
     const helpText = document.createElement('div');
     helpText.className = 'form-text ui-pattern-helper';
-    helpText.textContent = '用于从 RSS 标题中提取集数；规则必须包含命名捕获组 (?<episode>...)。';
+    helpText.textContent = '用于匹配完整 RSS 标题并提取集数；规则必须包含命名捕获组 (?<episode>...)。';
     field.querySelector('#pattern')?.insertAdjacentElement('afterend', helpText);
 
     const help = document.createElement('details');
@@ -290,6 +290,45 @@
         <div class="ui-pattern-example"><code>S\\d+E(?&lt;episode&gt;\\d+)</code><span>匹配 S01E03 形式的集数</span></div>
       </div>`;
     field.appendChild(help);
+  }
+
+
+  function buildEditorContext() {
+    const edit = document.getElementById('pattern-edit');
+    const heading = edit?.querySelector('.editor-heading');
+    if (!edit || !heading || edit.querySelector('.ui-editor-context')) return;
+
+    const context = document.createElement('div');
+    context.className = 'ui-editor-context d-none';
+    context.innerHTML = [
+      '<span class="ui-editor-context-art" aria-hidden="true"><i class="bi bi-broadcast"></i></span>',
+      '<span class="ui-editor-context-copy">',
+      '<strong class="ui-editor-context-title"></strong>',
+      '<span class="ui-editor-context-meta"></span>',
+      '</span>',
+      '<span class="ui-editor-context-status"></span>'
+    ].join('');
+    heading.insertAdjacentElement('afterend', context);
+  }
+
+  function updateEditorContext(app, pattern) {
+    const context = document.querySelector('.ui-editor-context');
+    if (!context) return;
+    context.classList.toggle('d-none', !pattern);
+    if (!pattern) return;
+
+    const statusMeta = {
+      normal: ['正常', 'status-ok'],
+      'case-mismatch': ['待修复', 'status-warning'],
+      'not-found': ['未匹配', 'status-error'],
+      unavailable: ['等待 Sonarr', 'status-muted']
+    }[app.getPatternStatus(pattern)] || ['未知', 'status-muted'];
+
+    context.querySelector('.ui-editor-context-title').textContent = pattern.series || '未命名订阅';
+    context.querySelector('.ui-editor-context-meta').textContent = sourceLabel(pattern) + ' · S' + (pattern.season || '--');
+    const status = context.querySelector('.ui-editor-context-status');
+    status.className = 'ui-editor-context-status ' + statusMeta[1];
+    status.textContent = statusMeta[0];
   }
 
   function buildEditorTabs() {
@@ -404,6 +443,7 @@
     buildFilterChips();
     buildBatchToolbar();
     buildPaginationShell();
+    buildEditorContext();
     buildEditorTabs();
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
@@ -436,6 +476,7 @@
     document.getElementById('pattern-list')?.classList.remove('d-none');
     document.getElementById('pattern-edit')?.classList.remove('d-none');
     document.body.classList.add('ui-drawer-open');
+    updateEditorContext(this, pattern);
 
     const title = document.getElementById('edit-title');
     if (title) title.textContent = pattern ? '编辑订阅' : '新建订阅';
@@ -508,6 +549,32 @@
     const display = document.getElementById('ui-selected-count');
     if (display) display.textContent = String(count);
     syncSelectedCardStyles(this);
+    return result;
+  };
+
+
+  const originalRenderRssPreview = proto.renderRssPreview;
+  proto.renderRssPreview = function redesignedRenderRssPreview(...args) {
+    const result = originalRenderRssPreview.apply(this, args);
+    const preview = document.getElementById('rss-preview');
+    const source = document.getElementById('pattern')?.value || '';
+    let regex = null;
+    try {
+      regex = new RegExp('^' + source + String.fromCharCode(36));
+    } catch (_) {}
+
+    preview?.querySelectorAll('.rss-item').forEach((row, index) => {
+      const title = this.rssItems?.[index] || row.textContent;
+      const match = regex?.exec(title);
+      const titleNode = document.createElement('span');
+      titleNode.className = 'ui-rss-title';
+      titleNode.textContent = title;
+      const resultNode = document.createElement('span');
+      resultNode.className = 'ui-rss-result-badge';
+      resultNode.textContent = match?.groups?.episode ? 'E' + match.groups.episode : (match ? '匹配' : '未匹配');
+      row.classList.add('ui-rss-result');
+      row.replaceChildren(titleNode, resultNode);
+    });
     return result;
   };
 

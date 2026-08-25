@@ -1272,3 +1272,92 @@ body.ui-drawer-open {
     transition: none !important;
   }
 }
+
+
+/* Visual QA refinement: keep the desktop library visible beside the editor. */
+.ui-editor-context {
+  flex: 0 0 auto;
+  min-height: 72px;
+  padding: 12px 22px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+.ui-editor-context.d-none { display: none !important; }
+.ui-editor-context-art {
+  width: 42px;
+  height: 52px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  color: var(--ui-accent-strong);
+  background: linear-gradient(145deg, var(--ui-accent-soft), var(--ui-surface));
+}
+.ui-editor-context-copy { min-width: 0; display: grid; gap: 3px; }
+.ui-editor-context-title {
+  color: var(--ui-text-strong);
+  font-size: 0.84rem;
+  font-weight: 720;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-editor-context-meta {
+  color: var(--ui-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-editor-context-status {
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rss-item.ui-rss-result {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+}
+.ui-rss-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-rss-result-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--ui-neutral);
+  background: var(--ui-neutral-soft);
+  font-size: 0.63rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rss-item.matched .ui-rss-result-badge {
+  color: var(--ui-success);
+  background: var(--ui-success-soft);
+}
+
+@media (min-width: 1181px) {
+  #pattern-edit.pattern-edit { width: min(520px, 42vw); }
+  body.ui-drawer-open .app-content {
+    width: calc(100vw - min(520px, 42vw) - 48px) !important;
+    max-width: none !important;
+    margin-left: 24px !important;
+    margin-right: auto !important;
+  }
+}
