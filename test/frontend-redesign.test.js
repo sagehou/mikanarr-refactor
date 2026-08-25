@@ -4,15 +4,28 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { JSDOM } = require('jsdom');
 
-const { MikanarrApp } = require('../public/js/app');
-
-function installRedesignDom() {
+async function installRedesignDom() {
   const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
   const redesign = readFileSync(join(__dirname, '../public/js/redesign.js'), 'utf8');
   const dom = new JSDOM(html, {
     url: 'https://mikanarr.test/',
     runScripts: 'outside-only'
   });
+
+  if (dom.window.document.readyState === 'loading') {
+    await new Promise(resolve => dom.window.addEventListener('DOMContentLoaded', resolve, { once: true }));
+  }
+
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.navigator = dom.window.navigator;
+  global.DOMParser = dom.window.DOMParser;
+  global.Event = dom.window.Event;
+  global.localStorage = dom.window.localStorage;
+
+  const appModule = require.resolve('../public/js/app');
+  delete require.cache[appModule];
+  const { MikanarrApp } = require(appModule);
 
   dom.window.MikanarrApp = MikanarrApp;
   dom.window.MikanarrUi = {
@@ -23,7 +36,6 @@ function installRedesignDom() {
       warning() {}
     }
   };
-  dom.window.eval(redesign);
 
   const app = Object.create(MikanarrApp.prototype);
   app.allPatterns = [];
@@ -40,8 +52,20 @@ function installRedesignDom() {
   app.sonarrHost = '';
   dom.window.mikanarrApp = app;
 
-  dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
-  return { dom, app };
+  dom.window.eval(redesign);
+
+  const cleanup = () => {
+    dom.window.close();
+    delete require.cache[appModule];
+    delete global.window;
+    delete global.document;
+    delete global.navigator;
+    delete global.DOMParser;
+    delete global.Event;
+    delete global.localStorage;
+  };
+
+  return { dom, app, cleanup };
 }
 
 function pattern(id) {
@@ -66,8 +90,8 @@ test('approved dashboard redesign is wired after the existing application assets
   assert.match(html, /\/js\/app\.js[\s\S]*\/js\/redesign\.js/);
 });
 
-test('redesign turns the Pattern workspace into localized subscription management chrome', () => {
-  const { dom } = installRedesignDom();
+test('redesign turns the Pattern workspace into localized subscription management chrome', async () => {
+  const { dom, cleanup } = await installRedesignDom();
   const document = dom.window.document;
 
   assert.equal(document.querySelector('.pattern-page-heading h1').textContent, '订阅管理');
@@ -97,11 +121,11 @@ test('redesign turns the Pattern workspace into localized subscription managemen
   assert.ok(document.querySelector('.ui-pattern-help'));
   assert.match(document.querySelector('.editor-preview-card .card-header').textContent, /实时预览/);
 
-  dom.window.close();
+  cleanup();
 });
 
-test('card workspace pages subscriptions instead of rendering the full library at once', () => {
-  const { dom, app } = installRedesignDom();
+test('card workspace pages subscriptions instead of rendering the full library at once', async () => {
+  const { dom, app, cleanup } = await installRedesignDom();
   const document = dom.window.document;
   const patterns = Array.from({ length: 25 }, (_, index) => pattern(index + 1));
 
@@ -123,11 +147,11 @@ test('card workspace pages subscriptions instead of rendering the full library a
   assert.ok(firstCard.querySelector('.ui-card-details'));
   assert.match(firstCard.querySelector('.pattern-card-status-badge').textContent, /未匹配/);
 
-  dom.window.close();
+  cleanup();
 });
 
-test('card selection reveals the integrated bulk toolbar and selected styling', () => {
-  const { dom, app } = installRedesignDom();
+test('card selection reveals the integrated bulk toolbar and selected styling', async () => {
+  const { dom, app, cleanup } = await installRedesignDom();
   const document = dom.window.document;
   const patterns = [pattern(1), pattern(2), pattern(3)];
   app.allPatterns = patterns;
@@ -147,5 +171,5 @@ test('card selection reveals the integrated bulk toolbar and selected styling', 
   assert.equal(document.getElementById('batch-actions').classList.contains('d-none'), true);
   assert.equal(document.querySelectorAll('.pattern-card.is-selected').length, 0);
 
-  dom.window.close();
+  cleanup();
 });
