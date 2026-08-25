@@ -4,6 +4,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { JSDOM } = require('jsdom');
 
+// Regression coverage for the approved low-saturation subscription dashboard.
 async function installRedesignDom() {
   const html = readFileSync(join(__dirname, '../public/index.html'), 'utf8');
   const redesign = readFileSync(join(__dirname, '../public/js/redesign.js'), 'utf8');
