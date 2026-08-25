@@ -574,7 +574,7 @@
     this.updateBatchUI();
   };
 
-  document.addEventListener('DOMContentLoaded', () => {
+  const bootRedesign = () => {
     enhanceStaticUi();
 
     document.getElementById('batch-update-btn')?.addEventListener('click', () => window.mikanarrApp?.batchUpdateSelection());
@@ -584,5 +584,11 @@
     document.getElementById('pattern-card-view')?.addEventListener('change', event => {
       if (event.target.classList.contains('card-checkbox')) window.mikanarrApp?.updateBatchUI();
     });
-  });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootRedesign, { once: true });
+  } else {
+    bootRedesign();
+  }
 })();
