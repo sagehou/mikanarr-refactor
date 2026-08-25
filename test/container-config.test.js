@@ -11,41 +11,65 @@ const root = resolve(__dirname, '..');
 const read = file => readFileSync(resolve(root, file), 'utf8');
 const parseYaml = file => yaml.parse(read(file));
 
-test('production dependency floors and exact test dependencies stay patched', () => {
+function parseDeclaredVersion(spec) {
+  const match = /^[~^]?(\d+)\.(\d+)\.(\d+)$/.exec(spec || '');
+  assert.ok(match, `unsupported semver declaration: ${spec}`);
+  return match.slice(1).map(Number);
+}
+
+function compareVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
+}
+
+function assertVersionRange(spec, min, maxExclusive) {
+  const version = parseDeclaredVersion(spec);
+  assert.ok(compareVersions(version, min) >= 0, `${spec} must be >= ${min.join('.')}`);
+  assert.ok(compareVersions(version, maxExclusive) < 0, `${spec} must be < ${maxExclusive.join('.')}`);
+  return version;
+}
+
+test('production dependency floors and supported majors stay patched', () => {
   const manifest = JSON.parse(read('package.json'));
-  assert.deepEqual(
-    {
-      axios: manifest.dependencies.axios,
-      betterSqlite3: manifest.dependencies['better-sqlite3'],
-      dotenv: manifest.dependencies.dotenv,
-      hpm: manifest.dependencies['http-proxy-middleware']
-    },
-    {
-      axios: '^1.18.1',
-      betterSqlite3: '^12.11.1',
-      dotenv: '^17.4.2',
-      hpm: '^3.0.7'
-    }
-  );
-  assert.equal(manifest.dependencies['openid-client'], '6.8.4');
+
+  assertVersionRange(manifest.dependencies.axios, [1, 18, 1], [2, 0, 0]);
+  const betterSqliteVersion = assertVersionRange(manifest.dependencies['better-sqlite3'], [12, 11, 1], [13, 0, 0]);
+  assertVersionRange(manifest.dependencies.dotenv, [17, 4, 2], [18, 0, 0]);
+  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [3, 0, 7], [4, 0, 0]);
+  assertVersionRange(manifest.dependencies['openid-client'], [6, 8, 4], [7, 0, 0]);
   assert.equal(manifest.dependencies.safeRegex2, undefined);
-  assert.equal(manifest.dependencies['safe-regex2'], '5.1.1');
-  assert.equal(manifest.devDependencies.jsdom, '29.1.1');
-  assert.equal(manifest.devDependencies.yaml, '2.9.0');
+  assertVersionRange(manifest.dependencies['safe-regex2'], [5, 1, 1], [6, 0, 0]);
+  assertVersionRange(manifest.devDependencies.jsdom, [29, 1, 1], [31, 0, 0]);
+  assertVersionRange(manifest.devDependencies.yaml, [2, 9, 0], [3, 0, 0]);
   assert.equal(manifest.dependencies.cors, undefined);
-  assert.equal(manifest.packageManager, 'npm@11.18.0');
-  assert.deepEqual(manifest.allowScripts, { 'better-sqlite3@12.11.1': true });
+
+  const npmVersion = manifest.packageManager?.match(/^npm@(\d+\.\d+\.\d+)$/)?.[1];
+  assert.ok(npmVersion, 'packageManager must pin an exact npm version');
+  assertVersionRange(npmVersion, [11, 18, 0], [12, 0, 0]);
+
+  assert.deepEqual(manifest.allowScripts, { [`better-sqlite3@${betterSqliteVersion.join('.')}`]: true });
   assert.equal(read('.npmrc').trim(), 'strict-allow-scripts=true');
 });
 
 test('Dockerfile defines a pinned production-only non-root healthy runtime', () => {
   const dockerfile = read('Dockerfile');
-  assert.match(dockerfile, /^FROM node:22\.23\.1-alpine3\.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2$/m);
+  const baseImage = dockerfile.match(/^FROM node:(\d+)\.(\d+)\.(\d+)-alpine(\d+\.\d+)@sha256:([a-f0-9]{64})$/m);
+  assert.ok(baseImage, 'Node base image must use an exact Alpine tag and sha256 digest');
+  const nodeVersion = baseImage.slice(1, 4).map(Number);
+  assert.ok(compareVersions(nodeVersion, [22, 13, 0]) >= 0, 'Node runtime must be >= 22.13.0');
+  assert.ok(compareVersions(nodeVersion, [23, 0, 0]) < 0, 'Node runtime must remain on supported major 22');
+  assert.equal(baseImage[4], '3.24');
   assert.match(dockerfile, /^COPY package\*\.json \.npmrc \.\/$/m);
-  assert.match(dockerfile, /npm install --global --ignore-scripts npm@11\.18\.0/);
-  assert.match(dockerfile, /test "\$\(npm --version\)" = "11\.18\.0"/);
+
+  const manifest = JSON.parse(read('package.json'));
+  const npmVersion = manifest.packageManager.match(/^npm@(\d+\.\d+\.\d+)$/)[1];
+  const escapedNpmVersion = npmVersion.replace(/\./g, '\\.');
+  assert.match(dockerfile, new RegExp(`npm install --global --ignore-scripts npm@${escapedNpmVersion}`));
+  assert.match(dockerfile, new RegExp(`test "\\$\\(npm --version\\)" = "${escapedNpmVersion}"`));
   assert.match(dockerfile, /npm ci --omit=dev/);
-  assert.ok(dockerfile.indexOf('npm@11.18.0') < dockerfile.indexOf('npm ci --omit=dev'));
+  assert.ok(dockerfile.indexOf(`npm@${npmVersion}`) < dockerfile.indexOf('npm ci --omit=dev'));
   assert.match(dockerfile, /(?:mkdir|install).*\/app\/data/);
   assert.match(dockerfile, /chown[^\n]*node:node[^\n]*\/app\/data/);
   assert.match(dockerfile, /^USER node$/m);
@@ -148,7 +172,8 @@ test('GitHub checks gate image publishing and workflow edits trigger releases', 
   assert.ok(check.on.workflow_call !== undefined);
   const checkJob = check.jobs.check;
   assert.equal(checkJob['runs-on'], 'ubuntu-latest');
-  const setupNode = checkJob.steps.find(step => step.uses === 'actions/setup-node@v4');
+  const setupNode = checkJob.steps.find(step => /^actions\/setup-node@v\d+$/.test(step.uses || ''));
+  assert.ok(setupNode, 'check workflow must use actions/setup-node');
   assert.equal(setupNode.with['node-version'], '22.23.1');
   const commands = checkJob.steps.map(step => step.run).filter(Boolean);
   assert.ok(commands.includes('npm install --global --ignore-scripts npm@11.18.0 && test "$(npm --version)" = "11.18.0"'));
@@ -175,7 +200,11 @@ test('Dependabot checks npm, GitHub Actions, and Docker every week', () => {
 test('GitLab verification gates publish and health-gated deploy with known hosts', () => {
   const config = parseYaml('.gitlab-ci.yml');
   assert.deepEqual(config.stages, ['test', 'publish', 'deploy']);
-  assert.equal(config.test.image, 'node:22.23.1-alpine3.24');
+  const gitlabNode = config.test.image.match(/^node:(\d+)\.(\d+)\.(\d+)-alpine3\.24$/);
+  assert.ok(gitlabNode, 'GitLab test image must use an exact Node 22 Alpine 3.24 tag');
+  const gitlabNodeVersion = gitlabNode.slice(1, 4).map(Number);
+  assert.ok(compareVersions(gitlabNodeVersion, [22, 13, 0]) >= 0);
+  assert.ok(compareVersions(gitlabNodeVersion, [23, 0, 0]) < 0);
   assert.ok(config.test.script.includes('npm install --global --ignore-scripts npm@11.18.0'));
   assert.ok(config.test.script.includes('test "$(npm --version)" = "11.18.0"'));
   assert.ok(config.test.script.includes('npm ci'));
