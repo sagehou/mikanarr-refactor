@@ -8,7 +8,7 @@
   },
   "packageManager": "npm@11.18.0",
   "allowScripts": {
-    "better-sqlite3@12.11.1": true
+    "better-sqlite3@13.0.3": true
   },
   "main": "server/index.js",
   "scripts": {
