@@ -11,7 +11,7 @@ stages:
 
 test:
   stage: test
-  image: node:22.23.1-alpine3.24
+  image: node:24.19.0-alpine3.24
   script:
     - npm install --global --ignore-scripts npm@11.18.0
     - test "$(npm --version)" = "11.18.0"
