@@ -1,7 +1,22 @@
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 
-function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddleware = createProxyMiddleware }) {
+function createLazyProxyMiddleware(options) {
+  let middlewarePromise;
+  return async function lazyProxyMiddleware(req, res, next) {
+    try {
+      if (!middlewarePromise) {
+        middlewarePromise = import('http-proxy-middleware')
+          .then(({ createProxyMiddleware }) => createProxyMiddleware(options));
+      }
+      const middleware = await middlewarePromise;
+      return middleware(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddleware }) {
   const router = express.Router();
   router.use(verifyToken);
   if (!config.sonarr.apiKey || !config.sonarr.host) {
@@ -12,7 +27,7 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
     req.sonarrStartedAt = Date.now();
     next();
   });
-  router.use('/', proxyMiddleware({
+  const proxyOptions = {
     target: config.sonarr.host,
     changeOrigin: true,
     secure: !config.sonarr.tlsInsecure,
@@ -49,7 +64,11 @@ function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddle
         }
       }
     }
-  }));
+  };
+  const middleware = proxyMiddleware
+    ? proxyMiddleware(proxyOptions)
+    : createLazyProxyMiddleware(proxyOptions);
+  router.use('/', middleware);
   return router;
 }
 
