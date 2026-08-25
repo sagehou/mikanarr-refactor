@@ -1,0 +1,60 @@
+name: Wire approved UI redesign
+
+on:
+  push:
+    branches:
+      - feat/ui-subscription-dashboard
+    paths:
+      - .github/workflows/wire-ui-redesign.yml
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ui-subscription-dashboard
+          fetch-depth: 0
+
+      - name: Wire additive redesign assets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('public/index.html')
+          text = path.read_text()
+          css_anchor = '  <link rel="stylesheet" href="/css/style.css">'
+          js_anchor = '  <script src="/js/app.js"></script>'
+          css_link = '  <link rel="stylesheet" href="/css/redesign.css">'
+          js_link = '  <script src="/js/redesign.js"></script>'
+
+          if css_link not in text:
+              if css_anchor not in text:
+                  raise SystemExit('style.css anchor not found')
+              text = text.replace(css_anchor, css_anchor + '\n' + css_link, 1)
+
+          if js_link not in text:
+              if js_anchor not in text:
+                  raise SystemExit('app.js anchor not found')
+              text = text.replace(js_anchor, js_anchor + '\n' + js_link, 1)
+
+          path.write_text(text)
+          PY
+          rm .github/workflows/wire-ui-redesign.yml
+
+      - name: Validate syntax
+        run: |
+          node --check public/js/redesign.js
+          grep -q '/css/redesign.css' public/index.html
+          grep -q '/js/redesign.js' public/index.html
+
+      - name: Commit wired UI
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/index.html .github/workflows/wire-ui-redesign.yml
+          git commit -m "feat(ui): wire subscription dashboard redesign"
+          git push origin HEAD:feat/ui-subscription-dashboard
