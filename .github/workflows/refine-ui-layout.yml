@@ -1,0 +1,262 @@
+name: Refine UI layout
+
+on:
+  push:
+    branches:
+      - feat/ui-subscription-dashboard
+    paths:
+      - .github/workflows/refine-ui-layout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ui-subscription-dashboard
+          fetch-depth: 0
+
+      - name: Refine desktop workspace and editor context
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          css_path = Path('public/css/redesign.css')
+          css = css_path.read_text()
+          tuning = r'''
+
+/* Visual QA refinement: keep the desktop library visible beside the editor. */
+.ui-editor-context {
+  flex: 0 0 auto;
+  min-height: 72px;
+  padding: 12px 22px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+.ui-editor-context.d-none {
+  display: none !important;
+}
+
+.ui-editor-context-art {
+  width: 42px;
+  height: 52px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  color: var(--ui-accent-strong);
+  background: linear-gradient(145deg, var(--ui-accent-soft), var(--ui-surface));
+}
+
+.ui-editor-context-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ui-editor-context-title {
+  color: var(--ui-text-strong);
+  font-size: 0.84rem;
+  font-weight: 720;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-editor-context-meta {
+  color: var(--ui-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-editor-context-status {
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rss-item.ui-rss-result {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+}
+
+.ui-rss-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-rss-result-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--ui-neutral);
+  background: var(--ui-neutral-soft);
+  font-size: 0.63rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rss-item.matched .ui-rss-result-badge {
+  color: var(--ui-success);
+  background: var(--ui-success-soft);
+}
+
+@media (min-width: 1181px) {
+  #pattern-edit.pattern-edit {
+    width: min(520px, 42vw);
+  }
+
+  body.ui-drawer-open .app-content {
+    width: calc(100vw - min(520px, 42vw) - 48px) !important;
+    max-width: none !important;
+    margin-left: 24px !important;
+    margin-right: auto !important;
+  }
+}
+'''
+          if 'Visual QA refinement: keep the desktop library visible beside the editor.' not in css:
+              css += tuning
+          css_path.write_text(css)
+
+          js_path = Path('public/js/redesign.js')
+          js = js_path.read_text()
+
+          context_functions = r'''
+  function buildEditorContext() {
+    const edit = document.getElementById('pattern-edit');
+    const heading = edit?.querySelector('.editor-heading');
+    if (!edit || !heading || edit.querySelector('.ui-editor-context')) return;
+
+    const context = document.createElement('div');
+    context.className = 'ui-editor-context d-none';
+    context.innerHTML = `
+      <span class="ui-editor-context-art" aria-hidden="true"><i class="bi bi-broadcast"></i></span>
+      <span class="ui-editor-context-copy">
+        <strong class="ui-editor-context-title"></strong>
+        <span class="ui-editor-context-meta"></span>
+      </span>
+      <span class="ui-editor-context-status"></span>`;
+    heading.insertAdjacentElement('afterend', context);
+  }
+
+  function updateEditorContext(app, pattern) {
+    const context = document.querySelector('.ui-editor-context');
+    if (!context) return;
+    context.classList.toggle('d-none', !pattern);
+    if (!pattern) return;
+
+    const statusMeta = {
+      normal: ['正常', 'status-ok'],
+      'case-mismatch': ['待修复', 'status-warning'],
+      'not-found': ['未匹配', 'status-error'],
+      unavailable: ['等待 Sonarr', 'status-muted']
+    }[app.getPatternStatus(pattern)] || ['未知', 'status-muted'];
+
+    context.querySelector('.ui-editor-context-title').textContent = pattern.series || '未命名订阅';
+    context.querySelector('.ui-editor-context-meta').textContent = `${sourceLabel(pattern)} · S${pattern.season || '--'}`;
+    const status = context.querySelector('.ui-editor-context-status');
+    status.className = `ui-editor-context-status ${statusMeta[1]}`;
+    status.textContent = statusMeta[0];
+  }
+
+'''
+          anchor = '  function buildEditorTabs() {'
+          if 'function buildEditorContext()' not in js:
+              if anchor not in js:
+                  raise SystemExit('editor tabs anchor not found')
+              js = js.replace(anchor, context_functions + anchor, 1)
+
+          if '    buildEditorContext();\n    buildEditorTabs();' not in js:
+              js = js.replace('    buildPaginationShell();\n    buildEditorTabs();', '    buildPaginationShell();\n    buildEditorContext();\n    buildEditorTabs();', 1)
+
+          show_anchor = "    document.body.classList.add('ui-drawer-open');\n\n    const title = document.getElementById('edit-title');"
+          if 'updateEditorContext(this, pattern);' not in js:
+              if show_anchor not in js:
+                  raise SystemExit('show editor anchor not found')
+              js = js.replace(show_anchor, "    document.body.classList.add('ui-drawer-open');\n    updateEditorContext(this, pattern);\n\n    const title = document.getElementById('edit-title');", 1)
+
+          # The application matches the entire RSS title, so examples need to cover the full string.
+          js = js.replace(
+              '<div class="ui-pattern-example"><code>(?&lt;episode&gt;\\\\d+)</code><span>匹配任意数字，例如提取第 03 话中的 03</span></div>',
+              '<div class="ui-pattern-example"><code>.* - (?&lt;episode&gt;\\\\d+)(?:\\\\D.*)?</code><span>匹配常见的 “标题 - 03” 形式</span></div>'
+          )
+          js = js.replace(
+              '<div class="ui-pattern-example"><code>(?:第|EP|Episode)\\\\s*-?(?&lt;episode&gt;\\\\d+)</code><span>匹配 第 03 话 / EP03 / Episode 03</span></div>',
+              '<div class="ui-pattern-example"><code>.*(?:第|EP|Episode)\\\\s*-?(?&lt;episode&gt;\\\\d+).*</code><span>匹配 第 03 话 / EP03 / Episode 03</span></div>'
+          )
+          js = js.replace(
+              '<div class="ui-pattern-example"><code>S\\\\d+E(?&lt;episode&gt;\\\\d+)</code><span>匹配 S01E03 形式的集数</span></div>',
+              '<div class="ui-pattern-example"><code>.*S\\\\d+E(?&lt;episode&gt;\\\\d+).*</code><span>匹配 S01E03 形式的集数</span></div>'
+          )
+          js = js.replace(
+              "helpText.textContent = '用于从 RSS 标题中提取集数；规则必须包含命名捕获组 (?<episode>...)。';",
+              "helpText.textContent = '用于匹配完整 RSS 标题并提取集数；规则必须包含命名捕获组 (?<episode>...)。';"
+          )
+
+          rss_wrapper = r'''
+  const originalRenderRssPreview = proto.renderRssPreview;
+  proto.renderRssPreview = function redesignedRenderRssPreview(...args) {
+    const result = originalRenderRssPreview.apply(this, args);
+    const preview = document.getElementById('rss-preview');
+    const source = document.getElementById('pattern')?.value || '';
+    let regex = null;
+    try {
+      regex = new RegExp(`^${source}$`);
+    } catch (_) {}
+
+    preview?.querySelectorAll('.rss-item').forEach((row, index) => {
+      const title = this.rssItems?.[index] || row.textContent;
+      const match = regex?.exec(title);
+      const titleNode = document.createElement('span');
+      titleNode.className = 'ui-rss-title';
+      titleNode.textContent = title;
+      const resultNode = document.createElement('span');
+      resultNode.className = 'ui-rss-result-badge';
+      resultNode.textContent = match?.groups?.episode ? `E${match.groups.episode}` : (match ? '匹配' : '未匹配');
+      row.classList.add('ui-rss-result');
+      row.replaceChildren(titleNode, resultNode);
+    });
+    return result;
+  };
+
+'''
+          rss_anchor = '  proto.batchUpdateSelection = async function batchUpdateSelection() {'
+          if 'redesignedRenderRssPreview' not in js:
+              if rss_anchor not in js:
+                  raise SystemExit('batch update anchor not found')
+              js = js.replace(rss_anchor, rss_wrapper + rss_anchor, 1)
+
+          js_path.write_text(js)
+          PY
+
+          rm .github/workflows/refine-ui-layout.yml
+
+      - name: Validate syntax
+        run: node --check public/js/redesign.js
+
+      - name: Commit refinements
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/css/redesign.css public/js/redesign.js .github/workflows/refine-ui-layout.yml
+          git commit -m "fix(ui): refine drawer layout and matching preview"
+          git push origin HEAD:feat/ui-subscription-dashboard
