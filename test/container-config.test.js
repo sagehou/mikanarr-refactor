@@ -58,8 +58,9 @@ test('Dockerfile defines a pinned production-only non-root healthy runtime', () 
   const baseImage = dockerfile.match(/^FROM node:(\d+)\.(\d+)\.(\d+)-alpine(\d+\.\d+)@sha256:([a-f0-9]{64})$/m);
   assert.ok(baseImage, 'Node base image must use an exact Alpine tag and sha256 digest');
   const nodeVersion = baseImage.slice(1, 4).map(Number);
-  assert.ok(compareVersions(nodeVersion, [22, 13, 0]) >= 0, 'Node runtime must be >= 22.13.0');
-  assert.ok(compareVersions(nodeVersion, [23, 0, 0]) < 0, 'Node runtime must remain on supported major 22');
+  assert.equal(nodeVersion[0], 24, 'production runtime must use Node 24 LTS');
+  assert.ok(compareVersions(nodeVersion, [24, 0, 0]) >= 0);
+  assert.ok(compareVersions(nodeVersion, [25, 0, 0]) < 0);
   assert.equal(baseImage[4], '3.24');
   assert.match(dockerfile, /^COPY package\*\.json \.npmrc \.\/$/m);
 
@@ -118,7 +119,7 @@ test('optional Traefik override parameterizes the host and external network', ()
   assert.equal(service.labels['traefik.enable'], 'true');
   assert.equal(service.labels['traefik.docker.network'], '${TRAEFIK_NETWORK:-traefik}');
   assert.equal(service.labels['traefik.http.routers.mikanarr.rule'], 'Host(`${MIKANARR_HOST:?set MIKANARR_HOST}`)');
-  assert.equal(service.labels['traefik.http.routers.mikanarr.tls'], 'true');
+  assert.equal(service.labels['traefik.http.routers.mikanarr.tls'], true);
   assert.ok(service.networks.includes('traefik'));
   assert.deepEqual(compose.networks.traefik, { external: true, name: '${TRAEFIK_NETWORK:-traefik}' });
 });
@@ -134,7 +135,7 @@ test('the copied environment example fails closed until authentication is config
 });
 
 test('backup and restore recipes protect archives and are valid shell', () => {
-  const blocks = [...read('README.md').matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]);
+  const blocks = [...read('UPGRADE_NOTES.md').matchAll(/```bash\n([\s\S]*?)```/g)].map(match => match[1]);
   const backup = blocks.find(block => block.includes('trap') && block.includes('tar -C /app/data -czf'));
   const restore = blocks.find(block => block.includes('find /app/data -mindepth 1'));
   assert.ok(backup, 'backup command block');
@@ -172,9 +173,10 @@ test('GitHub checks gate image publishing and workflow edits trigger releases', 
   assert.ok(check.on.workflow_call !== undefined);
   const checkJob = check.jobs.check;
   assert.equal(checkJob['runs-on'], 'ubuntu-latest');
+  assert.deepEqual(checkJob.strategy.matrix['node-version'], [22, 24]);
   const setupNode = checkJob.steps.find(step => /^actions\/setup-node@v\d+$/.test(step.uses || ''));
   assert.ok(setupNode, 'check workflow must use actions/setup-node');
-  assert.equal(setupNode.with['node-version'], '22.23.1');
+  assert.equal(setupNode.with['node-version'], '${{ matrix.node-version }}');
   const commands = checkJob.steps.map(step => step.run).filter(Boolean);
   assert.ok(commands.includes('npm install --global --ignore-scripts npm@11.18.0 && test "$(npm --version)" = "11.18.0"'));
   assert.ok(commands.includes('npm ci'));
@@ -201,10 +203,11 @@ test('GitLab verification gates publish and health-gated deploy with known hosts
   const config = parseYaml('.gitlab-ci.yml');
   assert.deepEqual(config.stages, ['test', 'publish', 'deploy']);
   const gitlabNode = config.test.image.match(/^node:(\d+)\.(\d+)\.(\d+)-alpine3\.24$/);
-  assert.ok(gitlabNode, 'GitLab test image must use an exact Node 22 Alpine 3.24 tag');
+  assert.ok(gitlabNode, 'GitLab test image must use an exact Node 24 Alpine 3.24 tag');
   const gitlabNodeVersion = gitlabNode.slice(1, 4).map(Number);
-  assert.ok(compareVersions(gitlabNodeVersion, [22, 13, 0]) >= 0);
-  assert.ok(compareVersions(gitlabNodeVersion, [23, 0, 0]) < 0);
+  assert.equal(gitlabNodeVersion[0], 24);
+  assert.ok(compareVersions(gitlabNodeVersion, [24, 0, 0]) >= 0);
+  assert.ok(compareVersions(gitlabNodeVersion, [25, 0, 0]) < 0);
   assert.ok(config.test.script.includes('npm install --global --ignore-scripts npm@11.18.0'));
   assert.ok(config.test.script.includes('test "$(npm --version)" = "11.18.0"'));
   assert.ok(config.test.script.includes('npm ci'));
