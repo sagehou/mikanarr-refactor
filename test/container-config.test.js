@@ -33,11 +33,15 @@ function assertVersionRange(spec, min, maxExclusive) {
 
 test('production dependency floors and supported majors stay patched', () => {
   const manifest = JSON.parse(read('package.json'));
+  assert.equal(manifest.engines.node, '>=22.22.2 <23 || >=24.15.0 <25');
 
   assertVersionRange(manifest.dependencies.axios, [1, 18, 1], [2, 0, 0]);
   const betterSqliteVersion = assertVersionRange(manifest.dependencies['better-sqlite3'], [13, 0, 3], [14, 0, 0]);
   assertVersionRange(manifest.dependencies.dotenv, [17, 4, 2], [18, 0, 0]);
-  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [3, 0, 7], [4, 0, 0]);
+  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [4, 2, 0], [5, 0, 0]);
+  const sonarrRoute = read('server/routes/sonarr.js');
+  assert.doesNotMatch(sonarrRoute, /require\(['\"]http-proxy-middleware['\"]\)/);
+  assert.match(sonarrRoute, /import\(['\"]http-proxy-middleware['\"]\)/);
   assertVersionRange(manifest.dependencies['openid-client'], [6, 8, 4], [7, 0, 0]);
   assert.equal(manifest.dependencies.safeRegex2, undefined);
   assertVersionRange(manifest.dependencies['safe-regex2'], [5, 1, 1], [6, 0, 0]);

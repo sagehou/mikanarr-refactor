@@ -7,7 +7,7 @@ const { createSonarrRouter } = require('../server/routes/sonarr');
 const { createTestDatabase, login, CookieJar } = require('./helpers/fixtures');
 const { listen } = require('./helpers/http');
 
-test('Sonarr proxy wires production TLS verification through the v3 event API', () => {
+test('Sonarr proxy wires production TLS verification through the proxy event API', () => {
   let options;
   createSonarrRouter({
     config: {
