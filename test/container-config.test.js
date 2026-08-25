@@ -35,7 +35,7 @@ test('production dependency floors and supported majors stay patched', () => {
   const manifest = JSON.parse(read('package.json'));
 
   assertVersionRange(manifest.dependencies.axios, [1, 18, 1], [2, 0, 0]);
-  const betterSqliteVersion = assertVersionRange(manifest.dependencies['better-sqlite3'], [12, 11, 1], [13, 0, 0]);
+  const betterSqliteVersion = assertVersionRange(manifest.dependencies['better-sqlite3'], [13, 0, 3], [14, 0, 0]);
   assertVersionRange(manifest.dependencies.dotenv, [17, 4, 2], [18, 0, 0]);
   assertVersionRange(manifest.dependencies['http-proxy-middleware'], [3, 0, 7], [4, 0, 0]);
   assertVersionRange(manifest.dependencies['openid-client'], [6, 8, 4], [7, 0, 0]);
@@ -67,9 +67,13 @@ test('Dockerfile defines a pinned production-only non-root healthy runtime', () 
   const manifest = JSON.parse(read('package.json'));
   const npmVersion = manifest.packageManager.match(/^npm@(\d+\.\d+\.\d+)$/)[1];
   const escapedNpmVersion = npmVersion.replace(/\./g, '\\.');
+  assert.match(dockerfile, /apk add --no-cache --virtual \.build-deps python3 make g\+\+/);
   assert.match(dockerfile, new RegExp(`npm install --global --ignore-scripts npm@${escapedNpmVersion}`));
   assert.match(dockerfile, new RegExp(`test "\\$\\(npm --version\\)" = "${escapedNpmVersion}"`));
   assert.match(dockerfile, /npm ci --omit=dev/);
+  assert.match(dockerfile, /apk del \.build-deps/);
+  assert.ok(dockerfile.indexOf('.build-deps python3 make g++') < dockerfile.indexOf('npm ci --omit=dev'));
+  assert.ok(dockerfile.indexOf('npm ci --omit=dev') < dockerfile.indexOf('apk del .build-deps'));
   assert.ok(dockerfile.indexOf(`npm@${npmVersion}`) < dockerfile.indexOf('npm ci --omit=dev'));
   assert.match(dockerfile, /(?:mkdir|install).*\/app\/data/);
   assert.match(dockerfile, /chown[^\n]*node:node[^\n]*\/app\/data/);
