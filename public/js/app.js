@@ -1,146 +1,60 @@
-// ===== Toast Notification System =====
-class Toast {
-  static container = null;
-
-  static init() {
-    if (!this.container) {
-      this.container = document.createElement('div');
-      this.container.className = 'toast-container';
-      document.body.appendChild(this.container);
-    }
-  }
-
-  static show(message, type = 'info', duration = 3000) {
-    this.init();
-
-    const icons = {
-      success: 'bi-check-circle-fill',
-      error: 'bi-x-circle-fill',
-      warning: 'bi-exclamation-triangle-fill',
-      info: 'bi-info-circle-fill'
-    };
-
-    const toast = document.createElement('div');
-    toast.className = `toast-item toast-${type}`;
-    toast.innerHTML = `
-      <i class="bi ${icons[type]} toast-icon"></i>
-      <div class="toast-content">${message}</div>
-      <button class="toast-close"><i class="bi bi-x"></i></button>
-    `;
-
-    this.container.appendChild(toast);
-
-    const close = () => {
-      toast.classList.add('toast-leaving');
-      setTimeout(() => toast.remove(), 300);
-    };
-
-    toast.querySelector('.toast-close').addEventListener('click', close);
-
-    if (duration > 0) {
-      setTimeout(close, duration);
-    }
-
-    return toast;
-  }
-
-  static success(message, duration) { return this.show(message, 'success', duration); }
-  static error(message, duration) { return this.show(message, 'error', duration); }
-  static warning(message, duration) { return this.show(message, 'warning', duration); }
-  static info(message, duration) { return this.show(message, 'info', duration); }
-}
-
-// ===== Confirm Dialog =====
-class ConfirmDialog {
-  static show({ title, message, confirmText = '确认', cancelText = '取消', type = 'danger' }) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'confirm-overlay';
-
-      const icons = {
-        danger: 'bi-exclamation-triangle-fill',
-        warning: 'bi-question-circle-fill'
-      };
-
-      overlay.innerHTML = `
-        <div class="confirm-dialog">
-          <div class="confirm-dialog-icon ${type}">
-            <i class="bi ${icons[type]}"></i>
-          </div>
-          <div class="confirm-dialog-title">${title}</div>
-          <div class="confirm-dialog-message">${message}</div>
-          <div class="confirm-dialog-buttons">
-            <button class="btn btn-secondary" id="confirm-cancel">${cancelText}</button>
-            <button class="btn btn-${type === 'danger' ? 'danger' : 'warning'}" id="confirm-ok">${confirmText}</button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(overlay);
-
-      const cleanup = (result) => {
-        overlay.remove();
-        resolve(result);
-      };
-
-      overlay.querySelector('#confirm-ok').addEventListener('click', () => cleanup(true));
-      overlay.querySelector('#confirm-cancel').addEventListener('click', () => cleanup(false));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) cleanup(false);
-      });
-
-      // Handle Escape key
-      const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-          document.removeEventListener('keydown', handleEscape);
-          cleanup(false);
-        }
-      };
-      document.addEventListener('keydown', handleEscape);
-    });
-  }
-}
+const { Toast, ConfirmDialog } = typeof module === 'object' && module.exports
+  ? require('./ui')
+  : window.MikanarrUi;
+const MikanarrApi = typeof module === 'object' && module.exports
+  ? require('./api')
+  : window.MikanarrApi;
 
 class MikanarrApp {
-  constructor() {
-    this.token = localStorage.getItem('token');
-    window.app = this; // Expose app instance for onclick handlers
+  constructor({ client, autoInit = true } = {}) {
+    this.client = client || MikanarrApi.createClient({
+      onUnauthorized: () => this.handleAuthExpired()
+    });
     this.currentPatternId = null;
     this.seriesList = [];
+    this.seriesLoadGeneration = 0;
+    this.seriesSearchGeneration = 0;
+    this.seriesInfoGeneration = 0;
+    this.rssLoadGeneration = 0;
+    this.patternLoadGeneration = 0;
+    this.patternLoadingGeneration = null;
     this.rssItems = [];
+    this.tmdbDetails = new Map();
+    this.authExpired = false;
     this.debounceTimer = null;
+    this.patternLoadError = null;
+    this.seriesLoadError = null;
+    this.viewReturnFocus = null;
     
-    this.init();
+    if (autoInit) this.init();
   }
 
   init() {
     this.initTheme();
-    this.checkOidcConfig();
-    this.checkAuth();
     this.setupEventListeners();
     this.setupKeyboardShortcuts();
+    this.start();
   }
 
-  async checkOidcConfig() {
-    // If already logged in, skip config check
-    if (this.token) return;
+  async start() {
+    const authenticated = await this.checkAuth();
+    if (!authenticated && !this.authExpired) await this.checkOidcConfig();
+  }
 
+  async checkOidcConfig({ allowAutoLogin = true } = {}) {
     try {
-      const response = await fetch('/auth/config');
+      const response = await this.apiRequest('/auth/config', { skipUnauthorized: true });
       if (response.ok) {
         const config = await response.json();
-        console.log('[OIDC] Config:', config);
+        this.oidcAutoLogin = Boolean(config.oidcAutoLogin);
         if (config.oidcEnabled) {
-          if (config.oidcAutoLogin) {
-            console.log('[OIDC] Auto-login enabled, redirecting...');
+          const container = document.getElementById('oidc-login-container');
+          if (container) container.classList.remove('d-none');
+          if (config.oidcAutoLogin && allowAutoLogin) {
             window.location.href = '/auth/oidc/login';
             return;
           }
-          const container = document.getElementById('oidc-login-container');
-          if (container) {
-            container.classList.remove('d-none');
-            console.log('[OIDC] SSO button enabled');
-          } else {
+          if (!container) {
             console.error('[OIDC] Button container not found');
           }
         }
@@ -152,48 +66,62 @@ class MikanarrApp {
 
   initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    this.updateThemeIcon(savedTheme);
+    this.applyTheme(savedTheme);
   }
 
   toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    this.updateThemeIcon(newTheme);
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const update = () => this.applyTheme(newTheme);
+    if (!reducedMotion && typeof document.startViewTransition === 'function') document.startViewTransition(update);
+    else update();
+  }
+
+  applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#241c18' : '#a86f4c');
+    localStorage.setItem('theme', theme);
+    this.updateThemeIcon(theme);
   }
 
   updateThemeIcon(theme) {
     const btn = document.getElementById('theme-toggle');
     if (btn) {
       btn.innerHTML = theme === 'dark' 
-        ? '<i class="bi bi-sun"></i>' 
-        : '<i class="bi bi-moon-stars"></i>';
+        ? '<i class="bi bi-sun" aria-hidden="true"></i>'
+        : '<i class="bi bi-moon-stars" aria-hidden="true"></i>';
     }
   }
 
   async checkAuth() {
-    if (this.token) {
-      document.getElementById('login-container').classList.add('d-none');
-      document.getElementById('main-container').classList.remove('d-none');
-      
-      // Initialize view preference
-      this.initView();
-      
-      // Load config first
-      await this.loadConfig();
-      
-      // Then load data in parallel
-      await Promise.all([
-        this.loadPatterns(),
-        this.loadSeries()
-      ]);
-    } else {
-      document.getElementById('login-container').classList.remove('d-none');
-      document.getElementById('main-container').classList.add('d-none');
+    try {
+      await this.client.session();
+      this.authExpired = false;
+      this.showAuthenticated();
+      await this.loadAuthenticatedData();
+      return true;
+    } catch (_) {
+      if (!this.authExpired) this.showLoggedOut();
+      return false;
     }
+  }
+
+  showAuthenticated() {
+    document.getElementById('login-container').classList.add('d-none');
+    document.getElementById('main-container').classList.remove('d-none');
+  }
+
+  showLoggedOut() {
+    document.getElementById('login-container').classList.remove('d-none');
+    document.getElementById('main-container').classList.add('d-none');
+  }
+
+  async loadAuthenticatedData() {
+    this.initView();
+    await this.loadConfig();
+    await Promise.all([this.loadPatterns(), this.loadSeries()]);
   }
 
   async loadConfig() {
@@ -204,6 +132,7 @@ class MikanarrApp {
         this.sonarrHost = config.sonarrHost || '';
       }
     } catch (error) {
+      if (error.status === 401) throw error;
       console.warn('[loadConfig] Failed to load config:', error.message);
     }
   }
@@ -218,9 +147,8 @@ setupEventListeners() {
     // 编辑页面删除按钮
     document.getElementById('edit-delete-btn').addEventListener('click', async () => {
       if (this.currentPatternId) {
-        await this.deletePattern(this.currentPatternId);
-        // deletePattern will reload list, but we need to switch view manually if it doesn't
-        this.showPatternList();
+        const deleted = await this.deletePattern(this.currentPatternId);
+        if (deleted) this.showPatternList();
       }
     });
     document.getElementById('pattern-form').addEventListener('submit', (e) => this.savePattern(e));
@@ -236,6 +164,7 @@ setupEventListeners() {
     document.getElementById('pattern').addEventListener('input', () => this.updateRssPreview());
     document.getElementById('copy-proxy-btn').addEventListener('click', () => this.copyProxyUrl());
     document.getElementById('export-btn').addEventListener('click', () => this.exportPatterns());
+    document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-input').click());
     document.getElementById('import-input').addEventListener('change', (e) => this.importPatterns(e));
     
     // Mikan导入
@@ -320,11 +249,15 @@ setupEventListeners() {
     if (view === 'card') {
       cardBtn.classList.add('active');
       tableBtn.classList.remove('active');
+      cardBtn.setAttribute('aria-pressed', 'true');
+      tableBtn.setAttribute('aria-pressed', 'false');
       cardView.classList.remove('d-none');
       tableView.classList.add('d-none');
     } else {
       tableBtn.classList.add('active');
       cardBtn.classList.remove('active');
+      tableBtn.setAttribute('aria-pressed', 'true');
+      cardBtn.setAttribute('aria-pressed', 'false');
       tableView.classList.remove('d-none');
       cardView.classList.add('d-none');
     }
@@ -345,6 +278,9 @@ setupEventListeners() {
   // ===== Keyboard Shortcuts =====
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
+      if (document.querySelector('.confirm-overlay, .modal.show, .modal[aria-modal="true"]') ||
+          document.body.classList.contains('modal-open')) return;
+
       // Skip if user is typing in an input
       const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
       
@@ -392,7 +328,7 @@ setupEventListeners() {
 
   // Add Series Logic
   showAddSeriesModal(initialQuery = '') {
-    const modal = new window.bootstrap.Modal(document.getElementById('add-series-modal'));
+    const modal = window.bootstrap.Modal.getOrCreateInstance(document.getElementById('add-series-modal'));
     document.getElementById('sonarr-search-input').value = initialQuery;
     document.getElementById('sonarr-search-results').innerHTML = '';
     document.getElementById('add-series-step-1').classList.remove('d-none');
@@ -409,7 +345,10 @@ setupEventListeners() {
   }
 
   async searchSonarrSeries() {
-    const query = document.getElementById('sonarr-search-input').value.trim();
+    const generation = ++this.seriesSearchGeneration;
+    const searchInput = document.getElementById('sonarr-search-input');
+    const query = searchInput.value.trim();
+    const isCurrent = () => generation === this.seriesSearchGeneration && searchInput.value.trim() === query;
     if (!query) return;
 
     const resultsDiv = document.getElementById('sonarr-search-results');
@@ -417,110 +356,108 @@ setupEventListeners() {
 
     try {
       const response = await this.apiRequest(`/sonarr/api/v3/series/lookup?term=${encodeURIComponent(query)}`);
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error('搜索失败');
       
       const allResults = await response.json();
+      if (!isCurrent()) return;
       // Store results for selection
       this.searchResults = allResults;
       this.currentSearchPage = 1;
       this.renderSearchResults();
       
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('[searchSonarrSeries] Error:', error);
-      resultsDiv.innerHTML = `<div class="text-center p-3 text-danger">搜索出错: ${error.message}</div>`;
+      const message = document.createElement('div');
+      message.className = 'text-center p-3 text-danger';
+      message.textContent = `搜索出错: ${error.message}`;
+      resultsDiv.replaceChildren(message);
     }
   }
 
   renderSearchResults() {
     const resultsDiv = document.getElementById('sonarr-search-results');
     const pageSize = 10;
-    const start = 0;
     const end = this.currentSearchPage * pageSize;
-    const results = this.searchResults.slice(start, end);
+    const results = this.searchResults.slice(0, end);
     const hasMore = this.searchResults.length > end;
+    resultsDiv.replaceChildren();
 
     if (!results || results.length === 0) {
-      resultsDiv.innerHTML = '<div class="text-center p-3 text-muted">未找到相关剧集</div>';
+      const empty = document.createElement('div');
+      empty.className = 'text-center p-3 text-muted';
+      empty.textContent = '未找到相关剧集';
+      resultsDiv.appendChild(empty);
       return;
     }
 
-    let html = results.map((series, index) => {
-      // Check if already exists
+    results.forEach((series, index) => {
       const exists = this.seriesList.some(s => s.tvdbId === series.tvdbId);
-      const existsBadge = exists ? '<span class="badge bg-success ms-2">已存在</span>' : '';
-      
-      // Placeholder ID for lazy loading
-      const imgId = `img-tvdb-${series.tvdbId}`;
-      const tmdbIdSpan = `tmdb-id-${series.tvdbId}`;
-      
-      return `
-        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" 
-          onclick="app.selectSeriesToAdd(${index})" ${exists ? 'disabled' : ''}>
-          <img id="${imgId}" src="https://via.placeholder.com/60x90?text=Loading" class="rounded me-3" width="40" height="60" style="object-fit: cover;">
-          <div>
-            <div class="fw-bold">${this.escapeHtml(series.title)} (${series.year}) ${existsBadge}</div>
-            <small class="text-muted">
-              TVDB: ${series.tvdbId} 
-              <span id="${tmdbIdSpan}">${series.tmdbId ? `| TMDB: ${series.tmdbId}` : ''}</span>
-              | ${series.network || 'Unknown'}
-            </small>
-          </div>
-        </button>
-      `;
-    }).join('');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'list-group-item list-group-item-action d-flex align-items-center';
+      button.disabled = exists;
+      button.addEventListener('click', () => this.selectSeriesToAdd(index));
+
+      const img = document.createElement('img');
+      img.src = '/images/icon.svg';
+      img.alt = '';
+      img.className = 'rounded me-3';
+      img.width = 40;
+      img.height = 60;
+      img.style.objectFit = 'cover';
+
+      const details = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'fw-bold';
+      title.append(document.createTextNode(`${series.title} (${series.year ?? ''})`));
+      if (exists) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-success ms-2';
+        badge.textContent = '已存在';
+        title.append(' ', badge);
+      }
+
+      const metadata = document.createElement('small');
+      metadata.className = 'text-muted';
+      metadata.append(document.createTextNode(`TVDB: ${series.tvdbId ?? ''} `));
+      const tmdbId = document.createElement('span');
+      tmdbId.textContent = series.tmdbId ? `| TMDB: ${series.tmdbId}` : '';
+      metadata.append(tmdbId, document.createTextNode(` | ${series.network || 'Unknown'}`));
+      details.append(title, metadata);
+      button.append(img, details);
+      resultsDiv.appendChild(button);
+
+      if (!series.tvdbId) return;
+      this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`)
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          const tmdbResult = data?.tv_results?.[0];
+          if (tmdbResult?.id) {
+            tmdbId.textContent = `| TMDB: ${tmdbResult.id}`;
+            series.tmdbId = tmdbResult.id;
+          }
+          if (tmdbResult?.poster_path) {
+            img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`);
+          } else {
+            this.loadSonarrImage(series, img);
+          }
+        })
+        .catch(() => this.loadSonarrImage(series, img));
+    });
 
     if (hasMore) {
-      html += `
-        <div class="text-center p-2">
-          <button class="btn btn-sm btn-outline-primary w-100" onclick="app.loadMoreSearchResults()">
-            加载更多
-          </button>
-        </div>
-      `;
+      const moreWrapper = document.createElement('div');
+      moreWrapper.className = 'text-center p-2';
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'btn btn-sm btn-outline-primary w-100';
+      more.textContent = '加载更多';
+      more.addEventListener('click', () => this.loadMoreSearchResults());
+      moreWrapper.appendChild(more);
+      resultsDiv.appendChild(moreWrapper);
     }
-
-    resultsDiv.innerHTML = html;
-
-    // Lazy load TMDB images and info for newly rendered items
-    // We only need to load for the items that haven't been loaded yet, or just re-run for all visible (simpler)
-    // To optimize, we could track loaded IDs, but re-running is okay as long as we check if img src is already set (not placeholder)
-    
-    results.forEach(async series => {
-      if (!series.tvdbId) return;
-      const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
-      if (!img || !img.src.includes('placeholder')) return; // Skip if already loaded
-
-      try {
-        // Use our own TMDB proxy
-        const response = await this.apiRequest(`/tmdb/find/${series.tvdbId}?source=tvdb_id`);
-        if (response.ok) {
-          const data = await response.json();
-          const tmdbResult = data.tv_results?.[0];
-          
-          // Update TMDB ID if found
-          if (tmdbResult?.id) {
-            const tmdbSpan = document.getElementById(`tmdb-id-${series.tvdbId}`);
-            if (tmdbSpan) {
-              tmdbSpan.textContent = `| TMDB: ${tmdbResult.id}`;
-              series.tmdbId = tmdbResult.id;
-            }
-          }
-
-          if (tmdbResult?.poster_path) {
-            if (img) {
-              // Direct TMDB URL
-              img.src = `https://image.tmdb.org/t/p/w92${tmdbResult.poster_path}`;
-            }
-          } else {
-             this.loadSonarrImage(series);
-          }
-        } else {
-           this.loadSonarrImage(series);
-        }
-      } catch (e) {
-        this.loadSonarrImage(series);
-      }
-    });
   }
 
   loadMoreSearchResults() {
@@ -528,24 +465,56 @@ setupEventListeners() {
     this.renderSearchResults();
   }
 
-  loadSonarrImage(series) {
-    const img = document.getElementById(`img-tvdb-${series.tvdbId}`);
+  imageProxyUrl(url) {
+    if (!url) return '/images/icon.svg';
+    if (url.startsWith('/api/image-proxy?url=')) return url;
+    let parsed;
+    try {
+      parsed = new URL(url, window.location.origin);
+    } catch (_) {
+      return '/images/icon.svg';
+    }
+    if (parsed.origin === window.location.origin) return `${parsed.pathname}${parsed.search}`;
+    return `/api/image-proxy?url=${encodeURIComponent(parsed.href)}`;
+  }
+
+  sonarrImageUrl(url) {
+    if (!url) return '/images/icon.svg';
+    try {
+      const sonarrBase = this.sonarrHost ? new URL(this.sonarrHost) : null;
+      const parsed = new URL(url, sonarrBase || window.location.origin);
+      const relative = !/^[a-z][a-z\d+.-]*:/i.test(url) && !url.startsWith('//');
+      if (relative || (sonarrBase && parsed.origin === sonarrBase.origin)) {
+        const path = parsed.pathname.startsWith('/sonarr/') ? parsed.pathname : `/sonarr${parsed.pathname}`;
+        return `${path}${parsed.search}`;
+      }
+      return this.imageProxyUrl(parsed.href);
+    } catch (_) {
+      return '/images/icon.svg';
+    }
+  }
+
+  externalHttpUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+      return parsed.href;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  loadSonarrImage(series, targetImg) {
+    const img = targetImg;
     if (!img) return;
 
-    let posterUrl = series.images.find(i => i.coverType === 'poster')?.remoteUrl || 
-                    series.images.find(i => i.coverType === 'poster')?.url;
+    let posterUrl = series.images?.find(i => i.coverType === 'poster')?.remoteUrl ||
+                    series.images?.find(i => i.coverType === 'poster')?.url;
                     
     if (posterUrl) {
-      if (posterUrl.startsWith('/')) {
-         const host = (this.sonarrHost || '').replace(/\/$/, '');
-         posterUrl = `${host}${posterUrl}`;
-      } else if (posterUrl.startsWith('http')) {
-         // Upgrade HTTP to HTTPS
-         posterUrl = posterUrl.replace(/^http:/, 'https:');
-      }
-      img.src = posterUrl;
+      img.src = this.sonarrImageUrl(posterUrl);
     } else {
-      img.src = 'https://via.placeholder.com/60x90?text=No+Img';
+      img.src = '/images/icon.svg';
     }
   }
 
@@ -559,6 +528,7 @@ setupEventListeners() {
     document.getElementById('add-series-step-2').classList.remove('d-none');
     document.getElementById('add-series-submit-btn').disabled = false;
     document.getElementById('add-series-back-btn').disabled = false;
+    document.getElementById('sonarr-root-folder').focus();
   }
 
   async handleLogin(e) {
@@ -568,72 +538,79 @@ setupEventListeners() {
     const errorDiv = document.getElementById('login-error');
 
     try {
-      const response = await fetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        this.token = data.token;
-        localStorage.setItem('token', this.token);
-        this.checkAuth();
-      } else {
-        errorDiv.textContent = '用户名或密码错误';
-        errorDiv.classList.remove('d-none');
-      }
+      await this.client.login({ username, password });
+      this.authExpired = false;
+      errorDiv.classList.add('d-none');
+      this.showAuthenticated();
+      await this.loadAuthenticatedData();
     } catch (error) {
       errorDiv.textContent = '登录失败: ' + error.message;
       errorDiv.classList.remove('d-none');
     }
   }
 
-  handleLogout() {
-    localStorage.removeItem('token');
-    this.token = null;
-    this.checkAuth();
+  async handleLogout() {
+    try {
+      await this.client.logout();
+      this.showLoggedOut();
+      await this.checkOidcConfig({ allowAutoLogin: false });
+    } catch (error) {
+      Toast.error(`退出失败: ${error.message}`);
+    }
   }
 
   async loadPatterns() {
+    const generation = ++this.patternLoadGeneration;
+    this.patternLoadingGeneration = generation;
+    this.patternLoadError = null;
     // Show skeleton loading
     this.showSkeletonLoading();
     
     try {
       const currentSort = this.currentSort || { field: 'created_at', direction: 'desc' };
       const response = await this.apiRequest(`/api/patterns?sortBy=${currentSort.field}&order=${currentSort.direction}`);
-      
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const patterns = await response.json();
-      
+      if (generation !== this.patternLoadGeneration) return;
+      this.patternLoadingGeneration = null;
+
       if (!Array.isArray(patterns)) {
         console.error('[loadPatterns] Expected array but got:', patterns);
         this.allPatterns = [];
       } else {
         this.allPatterns = patterns;
       }
-      
+
+      this.patternLoadError = null;
       this.filterPatterns(document.getElementById('search-input').value); // 使用筛选渲染
       this.updateSortIndicators();
+      this.setPatternLoading(false);
     } catch (error) {
+      if (generation !== this.patternLoadGeneration) return;
+      this.patternLoadingGeneration = null;
       console.error('Failed to load patterns:', error);
+      this.patternLoadError = '无法加载 Patterns，请检查连接后重试';
       this.allPatterns = [];
-      this.renderPatterns([]);
+      this.filteredPatterns = [];
+      this.updatePatternSummary();
+      this.renderCurrentView([]);
+      this.setPatternLoading(false);
       Toast.error('加载 Patterns 失败');
     }
   }
 
   showSkeletonLoading() {
+    this.setPatternLoading(true);
     // Table skeleton
     const tbody = document.getElementById('pattern-table-body');
     let skeletonHtml = '';
     for (let i = 0; i < 5; i++) {
       skeletonHtml += `
-        <tr>
-          <td><div class="skeleton skeleton-cell-sm" style="height: 18px; width: 18px;"></div></td>
+        <tr aria-hidden="true">
+          <td><div class="skeleton skeleton-checkbox"></div></td>
           <td><div class="skeleton skeleton-cell-sm"></div></td>
           <td><div class="skeleton skeleton-cell-xl"></div></td>
           <td><div class="skeleton skeleton-cell-sm"></div></td>
@@ -642,6 +619,7 @@ setupEventListeners() {
           <td><div class="skeleton skeleton-cell-md"></div></td>
           <td><div class="skeleton skeleton-cell-md"></div></td>
           <td><div class="skeleton skeleton-cell-lg"></div></td>
+          <td><div class="skeleton skeleton-cell-md"></div></td>
         </tr>
       `;
     }
@@ -649,6 +627,13 @@ setupEventListeners() {
 
     // Card skeleton
     this.showCardSkeletonLoading();
+    this.updateBatchUI();
+  }
+
+  setPatternLoading(loading) {
+    const value = String(Boolean(loading));
+    document.getElementById('pattern-card-view')?.setAttribute('aria-busy', value);
+    document.getElementById('pattern-table-view')?.setAttribute('aria-busy', value);
   }
 
   // 当前排序状态
@@ -680,7 +665,6 @@ setupEventListeners() {
       }
       
       // 2. Create tag if not exists
-      console.log('[getOrCreateMikanarrTag] Creating new tag:', TAG_LABEL);
       const createResponse = await this.apiRequest('/sonarr/api/v3/tag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -692,6 +676,7 @@ setupEventListeners() {
         return newTag.id;
       }
     } catch (e) {
+      if (e.status === 401) throw e;
       console.warn('[getOrCreateMikanarrTag] Failed:', e);
     }
     return null;
@@ -716,27 +701,27 @@ setupEventListeners() {
     submitBtn.disabled = true;
     submitBtn.textContent = '添加中...';
 
-    // Get tag ID
-    const tagId = await this.getOrCreateMikanarrTag();
-    const tags = tagId ? [tagId] : [];
-
-    const payload = {
-      title: this.selectedSeries.title,
-      qualityProfileId: qualityProfileId,
-      path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
-      tvdbId: this.selectedSeries.tvdbId,
-      seasonFolder: seasonFolder,
-      monitored: monitor !== 'none',
-      seriesType: seriesType,
-      images: this.selectedSeries.images,
-      tags: tags,
-      addOptions: {
-        monitor: monitor,
-        searchForMissingEpisodes: false
-      }
-    };
-
     try {
+      // Get tag ID
+      const tagId = await this.getOrCreateMikanarrTag();
+      const tags = tagId ? [tagId] : [];
+
+      const payload = {
+        title: this.selectedSeries.title,
+        qualityProfileId: qualityProfileId,
+        path: `${rootPath}/${this.selectedSeries.title}`, // Simplified path construction
+        tvdbId: this.selectedSeries.tvdbId,
+        seasonFolder: seasonFolder,
+        monitored: monitor !== 'none',
+        seriesType: seriesType,
+        images: this.selectedSeries.images,
+        tags: tags,
+        addOptions: {
+          monitor: monitor,
+          searchForMissingEpisodes: false
+        }
+      };
+
       const response = await this.apiRequest('/sonarr/api/v3/series', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -749,7 +734,7 @@ setupEventListeners() {
       }
 
       // Success
-      const modal = window.bootstrap.Modal.getInstance(document.getElementById('add-series-modal'));
+      const modal = window.bootstrap.Modal.getOrCreateInstance(document.getElementById('add-series-modal'));
       modal.hide();
       
       // Reload series list
@@ -764,7 +749,7 @@ setupEventListeners() {
       }
       
       // Show success message
-      Toast.success(`成功添加剧集: ${this.escapeHtml(this.selectedSeries.title)}`);
+      Toast.success(`成功添加剧集: ${this.selectedSeries.title}`);
 
     } catch (error) {
       console.error('[submitAddSeries] Error:', error);
@@ -796,10 +781,25 @@ setupEventListeners() {
     const rootSelect = document.getElementById('sonarr-root-folder');
     const qualitySelect = document.getElementById('sonarr-quality-profile');
 
-    rootSelect.innerHTML = '<option value="">选择路径...</option>' + 
-      this.sonarrOptions.rootFolders.map(f => `<option value="${f.path}">${f.path} (${this.formatBytes(f.freeSpace)} Free)</option>`).join('');
+    rootSelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '选择路径...';
+    rootSelect.appendChild(placeholder);
+    this.sonarrOptions.rootFolders.forEach(folder => {
+      const option = document.createElement('option');
+      option.value = folder.path;
+      option.textContent = `${folder.path} (${this.formatBytes(folder.freeSpace)} Free)`;
+      rootSelect.appendChild(option);
+    });
 
-    qualitySelect.innerHTML = this.sonarrOptions.qualityProfiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    qualitySelect.replaceChildren();
+    this.sonarrOptions.qualityProfiles.forEach(profile => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      qualitySelect.appendChild(option);
+    });
   }
 
   formatBytes(bytes, decimals = 2) {
@@ -812,10 +812,9 @@ setupEventListeners() {
   }
 
   async loadSeries() {
+    const generation = ++this.seriesLoadGeneration;
     try {
-      console.log('[loadSeries] Fetching series from Sonarr...');
       const response = await this.apiRequest('/sonarr/api/v3/series');
-      console.log('[loadSeries] Response status:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -823,8 +822,6 @@ setupEventListeners() {
       }
       
       const series = await response.json();
-      console.log('[loadSeries] Response type:', typeof series);
-      console.log('[loadSeries] Is array:', Array.isArray(series));
       
       if (!Array.isArray(series)) {
         // Check if response is HTML (auth page)
@@ -834,91 +831,103 @@ setupEventListeners() {
         throw new Error(`Invalid response type: expected array, got ${typeof series}`);
       }
       
-      console.log('[loadSeries] Loaded', series.length, 'series');
-      
+      if (generation !== this.seriesLoadGeneration) return;
+      this.seriesLoadError = null;
+      this.clearSeriesLoadError();
       this.seriesList = series;
+      this.renderSeriesOptions(this.seriesList);
+      this.filterPatterns(document.getElementById('search-input').value);
 
-      // Sync TMDB Chinese names for new series
-      await this.syncTmdbCache(series);
-      
-      this.renderSeriesOptions(series);
-
-      // Re-render patterns table to show Chinese names
-      this.loadPatterns();
+      void this.syncTmdbCache(series).then(cache => {
+        if (generation !== this.seriesLoadGeneration) return;
+        if (cache !== null) this.tmdbCache = cache;
+        this.renderSeriesOptions(this.seriesList);
+        this.filterPatterns(document.getElementById('search-input').value);
+      }).catch(() => console.error('[loadSeries] TMDB refresh failed'));
     } catch (error) {
-      console.error('[loadSeries] Failed to load series:', error);
-      const errorMsg = error.message || 'Unknown error';
-      
-      // Show error message to user
-      const seriesSelect = document.getElementById('series');
-      if (seriesSelect) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'alert alert-warning mt-2';
-        errorDiv.innerHTML = `
-          <i class="bi bi-exclamation-triangle"></i> 
-          加载 Sonarr 系列失败: ${errorMsg}
-          <br>
-          <small>请检查 SONARR_API_KEY 和 SONARR_HOST 配置</small>
-        `;
-        
-        // Remove existing error if any
-        const existingError = seriesSelect.parentElement.querySelector('.alert');
-        if (existingError) {
-          existingError.remove();
-        }
-        
-        seriesSelect.parentElement.appendChild(errorDiv);
-      }
+      if (generation !== this.seriesLoadGeneration) return;
+      if (error.code === 'SONARR_NOT_CONFIGURED') console.info('[loadSeries] Sonarr is not configured');
+      else console.error('[loadSeries] Failed to load series:', error);
+      this.seriesLoadError = error;
+      this.renderSeriesLoadError(error);
+      this.filterPatterns(document.getElementById('search-input').value);
     }
   }
 
+  renderSeriesLoadError(error) {
+    const notConfigured = error.code === 'SONARR_NOT_CONFIGURED';
+    const title = notConfigured ? 'Sonarr 尚未连接' : '暂时无法同步 Sonarr';
+    const message = notConfigured
+      ? '状态核对与系列选择暂不可用，现有 Pattern 仍可浏览和编辑。'
+      : '请检查 Sonarr 地址、API Key 与网络连接后重试。';
+    const notice = document.getElementById('workspace-notice');
+    if (notice) {
+      notice.innerHTML = '<i class="bi bi-cloud-slash" aria-hidden="true"></i><strong></strong><span></span>';
+      notice.querySelector('strong').textContent = title;
+      notice.querySelector('span').textContent = message;
+      notice.classList.remove('d-none');
+    }
+
+    const seriesSelect = document.getElementById('series');
+    if (!seriesSelect) return;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-warning sonarr-load-alert mt-2';
+    errorDiv.setAttribute('role', 'status');
+    errorDiv.innerHTML = '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> <span class="sonarr-load-error"></span><br><small></small>';
+    errorDiv.querySelector('.sonarr-load-error').textContent = notConfigured ? 'Sonarr 尚未配置，系列选择暂不可用' : '加载 Sonarr 系列失败';
+    errorDiv.querySelector('small').textContent = notConfigured ? '配置 SONARR_HOST 与 SONARR_API_KEY 后即可启用同步' : message;
+    const fieldContainer = seriesSelect.closest('.col-md-6') || seriesSelect.parentElement;
+    fieldContainer.querySelector('.sonarr-load-alert')?.remove();
+    fieldContainer.appendChild(errorDiv);
+  }
+
+  clearSeriesLoadError() {
+    const notice = document.getElementById('workspace-notice');
+    if (notice) {
+      notice.classList.add('d-none');
+      notice.replaceChildren();
+    }
+    document.querySelector('.sonarr-load-alert')?.remove();
+  }
+
   async syncTmdbCache(series) {
+    const seriesData = series
+      .filter(item => item.tmdbId)
+      .map(item => ({ tmdbId: item.tmdbId, titleEn: item.title }));
+    if (seriesData.length === 0) return null;
+
     try {
-      // Prepare series data for sync
-      const seriesData = series
-        .filter(s => s.tmdbId)
-        .map(s => ({ tmdbId: s.tmdbId, titleEn: s.title }));
-
-      if (seriesData.length === 0) {
-        console.log('[syncTmdbCache] No series with tmdbId to sync');
-        return;
-      }
-
-      console.log('[syncTmdbCache] Syncing', seriesData.length, 'series...');
-      
       const response = await this.apiRequest('/tmdb/cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ series: seriesData })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        this.tmdbCache = data.cache || {};
-        console.log('[syncTmdbCache] Synced', data.synced, 'new series, cache size:', Object.keys(this.tmdbCache).length);
-      } else {
-        console.warn('[syncTmdbCache] Sync failed, trying to load existing cache...');
-        // Fallback: try to load existing cache
-        const cacheResponse = await this.apiRequest('/tmdb/cache');
-        if (cacheResponse.ok) {
-          this.tmdbCache = await cacheResponse.json();
-        }
-      }
+      if (!response.ok) throw new Error('TMDB sync failed');
+      const data = await response.json();
+      return data.cache || {};
     } catch (error) {
-      console.error('[syncTmdbCache] Error:', error.message);
+      if (error.status === 401) return null;
+    }
+
+    try {
+      const response = await this.apiRequest('/tmdb/cache');
+      return await response.json();
+    } catch (error) {
+      console.error('[syncTmdbCache] Cache fallback failed:', error.message);
+      return null;
     }
   }
 
   renderSeriesOptions(series) {
     const select = document.getElementById('series');
+    const selectedSeries = select.value;
     select.innerHTML = '<option value="">选择系列...</option>';
     
     if (!series || series.length === 0) {
       console.warn('[renderSeriesOptions] No series to render');
       return;
     }
-    
-    console.log('[renderSeriesOptions] Rendering', series.length, 'series');
     
     series.forEach(s => {
       const option = document.createElement('option');
@@ -930,14 +939,17 @@ setupEventListeners() {
       
       select.appendChild(option);
     });
+    select.value = selectedSeries;
     
-    console.log('[renderSeriesOptions] Series options added to select element');
   }
 
   // ===== Sonarr Deep Integration - Series Info Card =====
   async updateSeriesInfoCard() {
+    const generation = ++this.seriesInfoGeneration;
     const seriesTitle = document.getElementById('series').value;
     const cardDiv = document.getElementById('series-info-card');
+    const isCurrent = () => generation === this.seriesInfoGeneration &&
+      document.getElementById('series').value === seriesTitle;
     
     if (!seriesTitle) {
       cardDiv.classList.add('d-none');
@@ -960,30 +972,28 @@ setupEventListeners() {
     // Try TMDB first
     if (series.tmdbId) {
       try {
-        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
-        if (response.ok) {
-          const tmdbData = await response.json();
-          if (tmdbData.poster_path) {
-            posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
-          }
+        const tmdbData = await this.getTmdbDetails(series.tmdbId);
+        if (!isCurrent()) return;
+        if (tmdbData?.poster_path) {
+          posterUrl = `https://image.tmdb.org/t/p/w185${tmdbData.poster_path}`;
         }
       } catch (e) {
+        if (!isCurrent()) return;
         console.warn('[updateSeriesInfoCard] TMDB fetch failed:', e);
       }
     }
+
+    if (!isCurrent()) return;
 
     // Fallback to Sonarr poster
     if (!posterUrl) {
       const poster = series.images?.find(i => i.coverType === 'poster');
       if (poster) {
         posterUrl = poster.remoteUrl || poster.url;
-        if (posterUrl?.startsWith('/')) {
-          posterUrl = `${this.sonarrHost}${posterUrl}`;
-        }
       }
     }
 
-    posterImg.src = posterUrl || 'https://via.placeholder.com/80x120?text=No+Poster';
+    posterImg.src = posterUrl ? this.sonarrImageUrl(posterUrl) : '/images/icon.svg';
 
     // Update title (Chinese name if available)
     const zhName = series.tmdbId ? this.tmdbCache[series.tmdbId] : null;
@@ -1018,8 +1028,14 @@ setupEventListeners() {
 
     // Update Sonarr link
     if (series.titleSlug && this.sonarrHost) {
-      document.getElementById('series-sonarr-link').href = `${this.sonarrHost}/series/${series.titleSlug}`;
-      document.getElementById('series-sonarr-link').classList.remove('d-none');
+      const link = document.getElementById('series-sonarr-link');
+      const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+      if (safeLink) {
+        link.href = safeLink;
+        link.classList.remove('d-none');
+      } else {
+        link.classList.add('d-none');
+      }
     } else {
       document.getElementById('series-sonarr-link').classList.add('d-none');
     }
@@ -1034,31 +1050,23 @@ setupEventListeners() {
     seasonSelect.innerHTML = '<option value="">选择季度...</option>';
 
     if (!seriesTitle) {
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
 
     const series = this.seriesList.find(s => s.title.toLowerCase() === seriesTitle.toLowerCase());
     if (!series) {
       console.warn('[loadSeasons] Series not found in list:', seriesTitle);
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
     
     if (!series.seasons) {
       console.warn('[loadSeasons] Series has no seasons:', seriesTitle);
-      if (currentSeason) {
-        seasonSelect.value = currentSeason; // 恢复选中的季度
-      }
+      this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
       return;
     }
 
-    console.log('[loadSeasons] Loading seasons for:', seriesTitle, series.seasons.length, 'seasons');
-    
     series.seasons.forEach(season => {
       const option = document.createElement('option');
       option.value = String(season.seasonNumber).padStart(2, '0');
@@ -1067,11 +1075,35 @@ setupEventListeners() {
     });
 
     // 恢复选中的季度
-    if (currentSeason) {
-      seasonSelect.value = currentSeason;
-    }
+    this.preserveSelectValue(seasonSelect, currentSeason, `S${currentSeason}（已保存）`);
   }
 
+  preserveSelectValue(select, value, label = value) {
+    if (!value) return;
+    if (!Array.from(select.options).some(option => option.value === value)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    select.value = value;
+  }
+
+
+  getPatternStatus(pattern) {
+    if (this.seriesLoadError) return 'unavailable';
+    const series = this.seriesList?.find(item => item.title.toLowerCase() === pattern.series.toLowerCase());
+    if (!series) return 'not-found';
+    return series.title === pattern.series ? 'normal' : 'case-mismatch';
+  }
+
+  updatePatternSummary() {
+    const patterns = this.allPatterns || [];
+    const total = document.getElementById('pattern-total-count');
+    const issues = document.getElementById('pattern-issue-count');
+    if (total) total.textContent = String(patterns.length);
+    if (issues) issues.textContent = String(patterns.filter(item => ['case-mismatch', 'not-found'].includes(this.getPatternStatus(item))).length);
+  }
 
   renderPatterns(patterns) {
     const tbody = document.getElementById('pattern-table-body');
@@ -1081,11 +1113,12 @@ setupEventListeners() {
     if (!patterns || patterns.length === 0) {
       const isFiltered = document.getElementById('search-input').value || 
                          document.getElementById('filter-status').value !== 'all';
+      const stateClass = isFiltered ? 'empty-state--filtered' : 'empty-state--library';
       
       tbody.innerHTML = `
         <tr>
-          <td colspan="9">
-            <div class="empty-state">
+          <td colspan="10">
+            <div class="empty-state ${stateClass}">
               <div class="empty-state-icon">
                 <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
               </div>
@@ -1098,7 +1131,7 @@ setupEventListeners() {
                   : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
               </div>
               ${!isFiltered ? `
-                <button class="btn btn-primary" onclick="app.showPatternEdit()">
+                <button type="button" class="btn btn-primary btn-empty-new">
                   <i class="bi bi-plus-lg"></i> 新建 Pattern
                 </button>
               ` : ''}
@@ -1106,34 +1139,41 @@ setupEventListeners() {
           </td>
         </tr>
       `;
+      tbody.querySelector('.btn-empty-new')?.addEventListener('click', () => this.showPatternEdit());
       return;
     }
     
     patterns.forEach(pattern => {
+      const status = this.getPatternStatus(pattern);
+      const statusMeta = {
+        normal: { label: '正常', badgeClass: 'status-ok' },
+        'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
+        'not-found': { label: '未找到系列', badgeClass: 'status-error' },
+        unavailable: { label: '等待 Sonarr', badgeClass: 'status-muted' }
+      }[status];
       // Find the series to get tmdbId for Chinese name lookup (case-insensitive)
       const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
       const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
       
       // Check match status
-      let matchStatus = '';
       let matchIcon = '';
       let fixBtn = '';
       let addBtn = ''; // Button to add series to Sonarr
       
-      if (!series) {
+      if (status === 'unavailable') {
+        matchIcon = '<i class="bi bi-cloud-slash text-info" title="Sonarr 暂不可用"></i> ';
+      } else if (!series) {
         // Series not found in Sonarr at all
-        matchStatus = 'not-found';
         matchIcon = '<i class="bi bi-exclamation-circle text-danger" title="Sonarr中未找到此系列"></i> ';
         
         // Add "Add Series" button
-        addBtn = `<button class="btn btn-sm btn-outline-success btn-add-series" data-query="${this.escapeHtml(pattern.series)}" title="搜索并添加到 Sonarr">
+        addBtn = `<button type="button" class="btn btn-sm btn-outline-success btn-add-series" title="搜索并添加到 Sonarr" aria-label="搜索并添加到 Sonarr">
             <i class="bi bi-plus-circle"></i>
           </button>`;
       } else if (series.title !== pattern.series) {
         // Found but case doesn't match exactly - might need update
-        matchStatus = 'case-mismatch';
-        matchIcon = `<i class="bi bi-exclamation-triangle text-warning" title="名称不完全匹配，Sonarr中为: ${this.escapeHtml(series.title)}"></i> `;
-        fixBtn = `<button class="btn btn-sm btn-outline-warning btn-fix" data-id="${pattern.id}" data-correct-name="${this.escapeHtml(series.title)}" title="修复为: ${this.escapeHtml(series.title)}">
+        matchIcon = '<i class="bi bi-exclamation-triangle text-warning pattern-match-warning"></i> ';
+        fixBtn = `<button type="button" class="btn btn-sm btn-outline-warning btn-fix" title="修复系列名" aria-label="修复系列名">
             <i class="bi bi-wrench"></i>
           </button>`;
       }
@@ -1142,36 +1182,27 @@ setupEventListeners() {
       
       // Sonarr link button
       const sonarrBtn = series?.titleSlug && this.sonarrHost 
-        ? `<a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+        ? `<a target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info btn-sonarr-link" title="在Sonarr中打开" aria-label="在Sonarr中打开">
             <i class="bi bi-box-arrow-up-right"></i>
           </a>`
         : '';
       
       // Copy proxy URL button (only if remote URL exists)
       const copyUrlBtn = pattern.remote
-        ? `<button class="btn btn-sm btn-outline-secondary btn-copy-url" data-remote="${this.escapeHtml(pattern.remote)}" title="复制代理URL">
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-copy-url" title="复制代理URL" aria-label="复制代理URL">
             <i class="bi bi-clipboard"></i>
           </button>`
         : '';
 
-      // Format last matched time
-      let lastMatched = '-';
-      if (pattern.last_matched_at) {
-        const date = new Date(pattern.last_matched_at);
-        lastMatched = `<div title="${date.toLocaleString()}">
-          ${date.toLocaleDateString()}<br>
-          <small class="text-muted">共 ${pattern.match_count || 0} 次</small>
-        </div>`;
-      }
-
       const tr = document.createElement('tr');
+      tr.className = `pattern-row pattern-row--${status}`;
       tr.innerHTML = `
-        <td><input type="checkbox" class="form-check-input row-checkbox" data-id="${pattern.id}"></td>
-        <td>${pattern.id}</td>
-        <td>${matchIcon}<strong>${this.escapeHtml(displayName)}</strong></td>
-        <td><span class="badge bg-secondary">S${pattern.season}</span></td>
-        <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span></td>
-        <td><span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span></td>
+        <td><input type="checkbox" class="form-check-input row-checkbox"></td>
+        <td class="pattern-id"></td>
+        <td>${matchIcon}<span class="pattern-status-badge"></span> <strong class="pattern-display-name"></strong></td>
+        <td><span class="badge bg-secondary">S<span class="pattern-season"></span></span></td>
+        <td><span class="badge ${this.getLanguageBadgeClass(pattern.language)} pattern-language"></span></td>
+        <td><span class="badge bg-primary pattern-quality"></span></td>
         <td>
           ${(() => {
             if (series) {
@@ -1191,23 +1222,66 @@ setupEventListeners() {
             return '<span class="text-muted">-</span>';
           })()}
         </td>
-        <td>${lastMatched}</td>
-        <td class="hide-mobile">${this.escapeHtml(pattern.releasegroup || '-')}</td>
+        <td class="pattern-last-matched"></td>
+        <td class="hide-mobile pattern-release-group"></td>
         <td class="text-nowrap">
           <div class="action-buttons d-flex gap-1">
             ${copyUrlBtn}
             ${sonarrBtn}
             ${addBtn}
             ${fixBtn}
-            <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${pattern.id}" title="编辑">
+            <button type="button" class="btn btn-sm btn-outline-primary btn-edit" title="编辑" aria-label="编辑 Pattern">
               <i class="bi bi-pencil"></i>
             </button>
-            <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${pattern.id}" title="删除">
+            <button type="button" class="btn btn-sm btn-outline-danger btn-delete" title="删除" aria-label="删除 Pattern">
               <i class="bi bi-trash"></i>
             </button>
           </div>
         </td>
       `;
+      const checkbox = tr.querySelector('.row-checkbox');
+      checkbox.dataset.id = pattern.id;
+      checkbox.setAttribute('aria-label', `选择 Pattern：${pattern.series}`);
+      const tableStatus = tr.querySelector('.pattern-status-badge');
+      tableStatus.classList.add(statusMeta.badgeClass);
+      tableStatus.textContent = statusMeta.label;
+      tr.querySelector('.pattern-id').textContent = pattern.id;
+      tr.querySelector('.pattern-display-name').textContent = displayName;
+      tr.querySelector('.pattern-season').textContent = pattern.season;
+      tr.querySelector('.pattern-language').textContent = pattern.language;
+      tr.querySelector('.pattern-quality').textContent = pattern.quality;
+      tr.querySelector('.pattern-release-group').textContent = pattern.releasegroup || '-';
+      tr.querySelectorAll('.btn-edit, .btn-delete, .btn-fix').forEach(button => {
+        button.dataset.id = pattern.id;
+      });
+      const warning = tr.querySelector('.pattern-match-warning');
+      if (warning) warning.title = `名称不完全匹配，Sonarr中为: ${series.title}`;
+      const fix = tr.querySelector('.btn-fix');
+      if (fix) fix.dataset.correctName = series.title;
+      const add = tr.querySelector('.btn-add-series');
+      if (add) add.dataset.query = pattern.series;
+      const copy = tr.querySelector('.btn-copy-url');
+      if (copy) copy.dataset.remote = pattern.remote;
+      const sonarrLink = tr.querySelector('.btn-sonarr-link');
+      if (sonarrLink) {
+        const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+        if (safeLink) sonarrLink.href = safeLink;
+        else sonarrLink.remove();
+      }
+      const lastMatched = tr.querySelector('.pattern-last-matched');
+      if (pattern.last_matched_at) {
+        const date = new Date(pattern.last_matched_at);
+        const wrapper = document.createElement('div');
+        wrapper.title = date.toLocaleString();
+        wrapper.append(document.createTextNode(date.toLocaleDateString()), document.createElement('br'));
+        const count = document.createElement('small');
+        count.className = 'text-muted';
+        count.textContent = `共 ${pattern.match_count || 0} 次`;
+        wrapper.appendChild(count);
+        lastMatched.appendChild(wrapper);
+      } else {
+        lastMatched.textContent = '-';
+      }
       tbody.appendChild(tr);
     });
 
@@ -1244,9 +1318,10 @@ setupEventListeners() {
     if (!patterns || patterns.length === 0) {
       const isFiltered = document.getElementById('search-input').value || 
                          document.getElementById('filter-status').value !== 'all';
+      const stateClass = isFiltered ? 'empty-state--filtered' : 'empty-state--library';
       
       container.innerHTML = `
-        <div class="pattern-card-empty">
+        <div class="pattern-card-empty ${stateClass}">
           <div class="empty-state-icon">
             <i class="bi ${isFiltered ? 'bi-search' : 'bi-collection'}"></i>
           </div>
@@ -1259,36 +1334,30 @@ setupEventListeners() {
               : '点击"新建"按钮创建第一个 Pattern，开始追踪你喜爱的动漫'}
           </div>
           ${!isFiltered ? `
-            <button class="btn btn-primary" onclick="app.showPatternEdit()">
+            <button type="button" class="btn btn-primary btn-empty-card-new">
               <i class="bi bi-plus-lg"></i> 新建 Pattern
             </button>
           ` : ''}
         </div>
       `;
+      container.querySelector('.btn-empty-card-new')?.addEventListener('click', () => this.showPatternEdit());
       return;
     }
 
-    patterns.forEach(pattern => {
-      const card = this.createPatternCard(pattern);
-      container.appendChild(card);
-    });
+    patterns.forEach(pattern => container.appendChild(this.createPatternCard(pattern)));
   }
 
   createPatternCard(pattern) {
+    const status = this.getPatternStatus(pattern);
+    const statusMeta = {
+      normal: { label: '正常', badgeClass: 'status-ok' },
+      'case-mismatch': { label: '名称不一致', badgeClass: 'status-warning' },
+      'not-found': { label: '未找到系列', badgeClass: 'status-error' },
+      unavailable: { label: '等待 Sonarr', badgeClass: 'status-muted' }
+    }[status];
     // Find the series to get tmdbId and stats
     const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
     const zhName = series?.tmdbId ? this.tmdbCache[series.tmdbId] : null;
-    
-    // Determine status
-    let statusClass = '';
-    let statusText = '';
-    if (!series) {
-      statusClass = 'status-error';
-      statusText = '未找到';
-    } else if (series.title !== pattern.series) {
-      statusClass = 'status-warning';
-      statusText = '名称不一致';
-    }
 
     // Calculate episode stats
     let downloadedEpisodes = 0;
@@ -1308,19 +1377,19 @@ setupEventListeners() {
     const hasPoster = series?.tmdbId || series?.images?.some(i => i.coverType === 'fanart' || i.coverType === 'poster');
 
     const card = document.createElement('div');
-    card.className = 'pattern-card';
+    card.className = `pattern-card pattern-card--${status}`;
     card.dataset.patternId = pattern.id;
     card.dataset.tmdbId = series?.tmdbId || '';
 
     // Build poster HTML - use placeholder div if no image available
     let posterContent = '';
     if (hasPoster) {
-      posterContent = `<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="${this.escapeHtml(pattern.series)}" loading="lazy">`;
+      posterContent = '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" loading="lazy">';
     } else {
       posterContent = `
         <div class="pattern-card-poster-placeholder">
           <i class="bi bi-film"></i>
-          <span>${this.escapeHtml(pattern.series.substring(0, 12))}${pattern.series.length > 12 ? '...' : ''}</span>
+          <span></span>
         </div>
       `;
     }
@@ -1328,15 +1397,15 @@ setupEventListeners() {
     card.innerHTML = `
       <div class="pattern-card-poster cursor-pointer">
         ${posterContent}
-        <span class="pattern-card-season-badge">S${pattern.season}</span>
-        ${statusText ? `<span class="pattern-card-status-badge ${statusClass}">${statusText}</span>` : ''}
+        <span class="pattern-card-season-badge"></span>
+        <span class="pattern-card-status-badge"></span>
       </div>
       <div class="pattern-card-body cursor-pointer">
-        <div class="pattern-card-title">${this.escapeHtml(pattern.series)}</div>
-        ${zhName ? `<div class="pattern-card-title-zh">${this.escapeHtml(zhName)}</div>` : ''}
+        <div class="pattern-card-title"></div>
+        ${zhName ? '<div class="pattern-card-title-zh"></div>' : ''}
         <div class="pattern-card-meta">
-          <span class="badge ${this.getLanguageBadgeClass(pattern.language)}">${this.escapeHtml(pattern.language)}</span>
-          <span class="badge bg-primary">${this.escapeHtml(pattern.quality)}</span>
+          <span class="badge ${this.getLanguageBadgeClass(pattern.language)} pattern-card-language"></span>
+          <span class="badge bg-primary pattern-card-quality"></span>
         </div>
         ${series ? `
           <div class="pattern-card-progress">
@@ -1359,26 +1428,55 @@ setupEventListeners() {
       </div>
       <div class="pattern-card-footer">
         <div class="pattern-card-checkbox">
-          <input type="checkbox" class="form-check-input card-checkbox" data-id="${pattern.id}">
+          <input type="checkbox" class="form-check-input card-checkbox">
         </div>
         <div class="pattern-card-actions">
-          <button class="btn btn-sm btn-outline-secondary btn-card-copy" data-remote="${this.escapeHtml(pattern.remote || '')}" title="复制RSS链接">
-            <i class="bi bi-clipboard"></i>
-          </button>
+          ${pattern.remote ? `
+            <button type="button" class="btn btn-sm btn-outline-secondary btn-card-copy" title="复制 RSS 链接" aria-label="复制 RSS 链接">
+              <i class="bi bi-clipboard" aria-hidden="true"></i>
+            </button>
+          ` : ''}
           ${series?.titleSlug && this.sonarrHost ? `
-            <a href="${this.sonarrHost}/series/${series.titleSlug}" target="_blank" class="btn btn-sm btn-outline-info" title="在Sonarr中打开">
+            <a target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info btn-card-sonarr" title="在Sonarr中打开" aria-label="在 Sonarr 中打开">
               <i class="bi bi-box-arrow-up-right"></i>
             </a>
           ` : ''}
-          <button class="btn btn-sm btn-outline-primary btn-card-edit" data-id="${pattern.id}" title="编辑">
+          <button type="button" class="btn btn-sm btn-outline-primary btn-card-edit" title="编辑" aria-label="编辑 Pattern">
             <i class="bi bi-pencil"></i>
           </button>
-          <button class="btn btn-sm btn-outline-danger btn-card-delete" data-id="${pattern.id}" title="删除">
+          <button type="button" class="btn btn-sm btn-outline-danger btn-card-delete" title="删除" aria-label="删除 Pattern">
             <i class="bi bi-trash"></i>
           </button>
         </div>
       </div>
     `;
+
+    const posterImage = card.querySelector('.pattern-card-poster img');
+    if (posterImage) posterImage.alt = pattern.series;
+    const posterLabel = card.querySelector('.pattern-card-poster-placeholder span');
+    if (posterLabel) posterLabel.textContent = `${pattern.series.substring(0, 12)}${pattern.series.length > 12 ? '...' : ''}`;
+    const cardStatus = card.querySelector('.pattern-card-status-badge');
+    cardStatus.classList.add(statusMeta.badgeClass);
+    cardStatus.textContent = statusMeta.label;
+    card.querySelector('.pattern-card-season-badge').textContent = `S${pattern.season}`;
+    card.querySelector('.pattern-card-title').textContent = pattern.series;
+    if (zhName) card.querySelector('.pattern-card-title-zh').textContent = zhName;
+    card.querySelector('.pattern-card-language').textContent = pattern.language;
+    card.querySelector('.pattern-card-quality').textContent = pattern.quality;
+    const copyButton = card.querySelector('.btn-card-copy');
+    if (copyButton) copyButton.dataset.remote = pattern.remote;
+    const cardCheckbox = card.querySelector('.card-checkbox');
+    cardCheckbox.dataset.id = pattern.id;
+    cardCheckbox.setAttribute('aria-label', `选择 Pattern：${pattern.series}`);
+    card.querySelectorAll('.btn-card-edit, .btn-card-delete').forEach(button => {
+      button.dataset.id = pattern.id;
+    });
+    const sonarrLink = card.querySelector('.btn-card-sonarr');
+    if (sonarrLink) {
+      const safeLink = this.externalHttpUrl(`${this.sonarrHost}/series/${series.titleSlug}`);
+      if (safeLink) sonarrLink.href = safeLink;
+      else sonarrLink.remove();
+    }
 
     // Add event listeners
     const editHandler = (e) => {
@@ -1408,11 +1506,8 @@ setupEventListeners() {
           // Swipe Right -> Edit
           this.editPattern(parseInt(card.dataset.patternId));
         } else {
-          // Swipe Left -> Confirm Delete
-          // Visual feedback before action would be ideal, but for now direct action
-          if (confirm('确定要删除这个 Pattern 吗？(滑动触发)')) {
-             this.deletePattern(parseInt(card.dataset.patternId));
-          }
+          // Swipe Left -> use the same confirmation flow as the delete button
+          this.deletePattern(parseInt(card.dataset.patternId));
         }
       }
     };
@@ -1456,25 +1551,23 @@ setupEventListeners() {
     const img = card.querySelector('.pattern-card-poster img');
     if (!img) return;
 
-    try {
-      // Try TMDB first (优先使用竖版 poster)
-      if (series.tmdbId) {
-        const response = await this.apiRequest(`/tmdb/tv/${series.tmdbId}`);
-        if (response.ok) {
-          const tmdbData = await response.json();
-          // 优先使用 poster_path (竖版)，其次才是 backdrop_path
-          // 使用 w154 尺寸，足够卡片展示且加载极快
-          if (tmdbData.poster_path) {
-            img.src = `https://image.tmdb.org/t/p/w154${tmdbData.poster_path}`;
-            return;
-          } else if (tmdbData.backdrop_path) {
-            // 如果只有横版图，使用 w300 裁剪
-            img.src = `https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`;
-            return;
-          }
+    // Try TMDB first (优先使用竖版 poster)
+    if (series.tmdbId) {
+      try {
+        const tmdbData = await this.getTmdbDetails(series.tmdbId);
+        if (tmdbData?.poster_path) {
+          img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w154${tmdbData.poster_path}`);
+          return;
+        } else if (tmdbData?.backdrop_path) {
+          img.src = this.imageProxyUrl(`https://image.tmdb.org/t/p/w300${tmdbData.backdrop_path}`);
+          return;
         }
+      } catch (error) {
+        console.warn('[loadCardPoster] TMDB failed, using Sonarr fallback:', error);
       }
+    }
 
+    try {
       // Fallback to Sonarr (优先 Poster)
       const poster = series.images?.find(i => i.coverType === 'poster');
       const fanart = series.images?.find(i => i.coverType === 'fanart');
@@ -1488,19 +1581,28 @@ setupEventListeners() {
       }
       
       if (imageUrl) {
-        let finalUrl = imageUrl;
-        if (finalUrl.startsWith('/')) {
-          finalUrl = `${this.sonarrHost}${finalUrl}`;
-        }
         // 如果是 Sonarr 内部代理图片，尝试添加 width 参数 (取决于 Sonarr 版本支持)
-        if (finalUrl.includes('/MediaCover')) {
-           finalUrl += '?width=200'; 
+        if (imageUrl.includes('/MediaCover')) {
+          imageUrl += `${imageUrl.includes('?') ? '&' : '?'}width=200`;
         }
-        img.src = finalUrl;
+        img.src = this.sonarrImageUrl(imageUrl);
       }
     } catch (e) {
       console.warn('[loadCardPoster] Failed:', e);
     }
+  }
+
+  getTmdbDetails(tmdbId) {
+    if (!this.tmdbDetails.has(tmdbId)) {
+      const details = this.apiRequest(`/tmdb/tv/${tmdbId}`)
+        .then(response => response.ok ? response.json() : null)
+        .catch(error => {
+          this.tmdbDetails.delete(tmdbId);
+          throw error;
+        });
+      this.tmdbDetails.set(tmdbId, details);
+    }
+    return this.tmdbDetails.get(tmdbId);
   }
 
   showCardSkeletonLoading() {
@@ -1508,7 +1610,7 @@ setupEventListeners() {
     let skeletonHtml = '';
     for (let i = 0; i < 6; i++) {
       skeletonHtml += `
-        <div class="pattern-card-skeleton">
+        <div class="pattern-card-skeleton" aria-hidden="true">
           <div class="skeleton skeleton-poster"></div>
           <div class="skeleton-body">
             <div class="skeleton skeleton-title"></div>
@@ -1573,21 +1675,31 @@ setupEventListeners() {
   }
 
   // 批量操作相关
+  getVisibleCheckboxes() {
+    const selector = this.currentView === 'card' ? '.card-checkbox' : '.row-checkbox';
+    return Array.from(document.querySelectorAll(selector));
+  }
+
   handleSelectAll(checked) {
-    document.querySelectorAll('.row-checkbox').forEach(cb => {
+    this.getVisibleCheckboxes().forEach(cb => {
       cb.checked = checked;
     });
     this.updateBatchUI();
   }
 
   updateBatchUI() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const allCheckboxes = this.getVisibleCheckboxes();
+    const selected = allCheckboxes.filter(checkbox => checkbox.checked);
     const batchDeleteBtn = document.getElementById('batch-delete-btn');
     const batchFixBtn = document.getElementById('batch-fix-btn');
     const selectAll = document.getElementById('select-all');
-    const allCheckboxes = document.querySelectorAll('.row-checkbox');
-    
-    document.getElementById('selected-count').textContent = selected.length;
+    const count = String(selected.length);
+    const selectedCount = document.getElementById('selected-count');
+    const summarySelected = document.getElementById('pattern-summary-selected');
+    const batchActions = document.getElementById('batch-actions');
+    if (selectedCount) selectedCount.textContent = count;
+    if (summarySelected) summarySelected.textContent = count;
+    batchActions?.classList.toggle('d-none', selected.length === 0);
     
     if (selected.length > 0) {
       batchDeleteBtn.classList.remove('d-none');
@@ -1616,7 +1728,7 @@ setupEventListeners() {
   }
 
   async batchDelete() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const selected = this.getVisibleCheckboxes().filter(checkbox => checkbox.checked);
     const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
     
     if (ids.length === 0) return;
@@ -1642,7 +1754,7 @@ setupEventListeners() {
   }
 
   async batchFix() {
-    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const selected = this.getVisibleCheckboxes().filter(checkbox => checkbox.checked);
     const ids = Array.from(selected).map(cb => parseInt(cb.dataset.id));
     
     if (ids.length === 0) return;
@@ -1671,15 +1783,17 @@ setupEventListeners() {
       let successCount = 0;
       for (const p of fixable) {
         const series = this.seriesList.find(s => s.title.toLowerCase() === p.series.toLowerCase());
-        p.series = series.title; // Update local
-        
+        const updatedPattern = { ...p, series: series.title };
         const response = await this.apiRequest(`/api/patterns/${p.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p)
+          body: JSON.stringify(updatedPattern)
         });
         
-        if (response.ok) successCount++;
+        if (response.ok) {
+          p.series = series.title;
+          successCount++;
+        }
       }
       
       this.loadPatterns();
@@ -1722,31 +1836,49 @@ setupEventListeners() {
         }
       });
       
-      let html = '';
+      outputDiv.replaceChildren();
       if (matches.length > 0) {
-        html += `<div class="text-success mb-2">✓ 匹配 ${matches.length} 条:</div>`;
-        html += '<ul class="mb-2">';
+        const summary = document.createElement('div');
+        summary.className = 'text-success mb-2';
+        summary.textContent = `✓ 匹配 ${matches.length} 条:`;
+        outputDiv.appendChild(summary);
+        const list = document.createElement('ul');
+        list.className = 'mb-2';
         matches.slice(0, 5).forEach(m => {
-          html += `<li>${this.escapeHtml(m.title)} → <strong>E${m.episode}</strong></li>`;
+          const item = document.createElement('li');
+          item.append(document.createTextNode(`${m.title} → `));
+          const episode = document.createElement('strong');
+          episode.textContent = `E${m.episode}`;
+          item.appendChild(episode);
+          list.appendChild(item);
         });
         if (matches.length > 5) {
-          html += `<li>... 还有 ${matches.length - 5} 条</li>`;
+          const remaining = document.createElement('li');
+          remaining.textContent = `... 还有 ${matches.length - 5} 条`;
+          list.appendChild(remaining);
         }
-        html += '</ul>';
+        outputDiv.appendChild(list);
       }
       
       if (nonMatches.length > 0) {
-        html += `<div class="text-danger">✗ 未匹配 ${nonMatches.length} 条</div>`;
+        const summary = document.createElement('div');
+        summary.className = 'text-danger';
+        summary.textContent = `✗ 未匹配 ${nonMatches.length} 条`;
+        outputDiv.appendChild(summary);
       }
       
       if (matches.length === 0) {
-        html = '<span class="text-danger">未匹配任何条目，请检查正则表达式</span>';
+        const message = document.createElement('span');
+        message.className = 'text-danger';
+        message.textContent = '未匹配任何条目，请检查正则表达式';
+        outputDiv.replaceChildren(message);
       }
-      
-      outputDiv.innerHTML = html;
       resultBox.classList.remove('d-none');
     } catch (error) {
-      outputDiv.innerHTML = `<span class="text-danger">正则表达式错误: ${this.escapeHtml(error.message)}</span>`;
+      const message = document.createElement('span');
+      message.className = 'text-danger';
+      message.textContent = `正则表达式错误: ${error.message}`;
+      outputDiv.replaceChildren(message);
       resultBox.classList.remove('d-none');
     }
   }
@@ -1754,7 +1886,7 @@ setupEventListeners() {
   importFromMikan() {
     const input = document.getElementById('mikan-import').value.trim();
     if (!input) {
-      alert('请输入Mikan URL');
+      Toast.warning('请输入 Mikan URL');
       return;
     }
 
@@ -1764,9 +1896,14 @@ setupEventListeners() {
     // Try to parse RSS URL
     // Format: https://mikanani.me/RSS/Bangumi?bangumiId=3455&subgroupid=370
     if (input.includes('bangumiId=')) {
-      const url = new URL(input);
-      bangumiId = url.searchParams.get('bangumiId');
-      subgroupid = url.searchParams.get('subgroupid');
+      try {
+        const url = new URL(input);
+        bangumiId = url.searchParams.get('bangumiId');
+        subgroupid = url.searchParams.get('subgroupid');
+      } catch (_) {
+        Toast.warning('无法解析 URL，请检查格式');
+        return;
+      }
     } 
     // Try to parse Home URL
     // Format: https://mikanani.me/Home/Bangumi/3455
@@ -1894,25 +2031,21 @@ setupEventListeners() {
   }
 
   async editPattern(id) {
-    console.log('[editPattern] Called with id:', id);
     try {
       const response = await this.apiRequest(`/api/patterns/${id}`);
-      console.log('[editPattern] Response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.log('[editPattern] Error data:', errorData);
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
       const pattern = await response.json();
-      console.log('[editPattern] Loaded pattern:', pattern);
       this.currentPatternId = id;
       this.showPatternEdit(pattern);
     } catch (error) {
       console.error('[editPattern] Failed to load pattern:', error);
       console.error('[editPattern] Error stack:', error.stack);
-      alert('加载 Pattern 失败: ' + error.message);
+      Toast.error('加载 Pattern 失败: ' + error.message);
     }
   }
 
@@ -1924,19 +2057,25 @@ setupEventListeners() {
       cancelText: '取消',
       type: 'danger'
     });
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     try {
       await this.apiRequest(`/api/patterns/${id}`, { method: 'DELETE' });
       this.loadPatterns();
       Toast.success('Pattern 已删除');
+      return true;
     } catch (error) {
       console.error('Failed to delete pattern:', error);
       Toast.error('删除失败: ' + error.message);
+      return false;
     }
   }
 
   showPatternEdit(pattern = null) {
+    const activeElement = document.activeElement;
+    if (activeElement && activeElement !== document.body && !document.getElementById('pattern-edit').contains(activeElement)) {
+      this.viewReturnFocus = activeElement;
+    }
     document.getElementById('pattern-list').classList.add('d-none');
     document.getElementById('pattern-edit').classList.remove('d-none');
     
@@ -1956,7 +2095,6 @@ setupEventListeners() {
     const deleteBtn = document.getElementById('edit-delete-btn');
 
     if (pattern) {
-      console.log('[showPatternEdit] Editing pattern:', pattern.series);
       document.getElementById('edit-title').textContent = '编辑 Pattern';
       // Show delete button in edit mode
       deleteBtn.classList.remove('d-none');
@@ -1964,7 +2102,8 @@ setupEventListeners() {
       document.getElementById('pattern-id').value = pattern.id;
       document.getElementById('remote').value = pattern.remote || '';
       document.getElementById('pattern').value = pattern.pattern;
-      document.getElementById('series').value = pattern.series;
+      const seriesSelect = document.getElementById('series');
+      this.preserveSelectValue(seriesSelect, pattern.series, `${pattern.series}（已保存）`);
       document.getElementById('language').value = pattern.language;
       document.getElementById('quality').value = pattern.quality;
       document.getElementById('offset').value = pattern.offset || 0;
@@ -1974,7 +2113,6 @@ setupEventListeners() {
       this.loadSeasons(pattern.season);
       this.updateProxyUrl();
     } else {
-      console.log('[showPatternEdit] Creating new pattern');
       document.getElementById('edit-title').textContent = '新建 Pattern';
       // Hide delete button in create mode
       deleteBtn.classList.add('d-none');
@@ -1986,6 +2124,8 @@ setupEventListeners() {
       
       document.getElementById('proxy-url-box').classList.add('d-none');
     }
+
+    document.getElementById('edit-title').focus({ preventScroll: true });
   }
 
   showPatternList() {
@@ -1993,6 +2133,10 @@ setupEventListeners() {
     document.getElementById('pattern-list').classList.remove('d-none');
     this.currentPatternId = null;
     this.updatePageTitle('Patterns');
+    const returnFocus = this.viewReturnFocus;
+    this.viewReturnFocus = null;
+    if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
+    else document.getElementById('search-input')?.focus({ preventScroll: true });
   }
 
   async savePattern(e) {
@@ -2019,6 +2163,7 @@ setupEventListeners() {
       const method = this.currentPatternId ? 'PUT' : 'POST';
       
       await this.apiRequest(url, { method, body: JSON.stringify(pattern) });
+      this.viewReturnFocus = null;
       this.showPatternList();
       this.loadPatterns();
       Toast.success('Pattern 已保存');
@@ -2031,7 +2176,10 @@ setupEventListeners() {
   }
 
   async loadRssPreview() {
-    const remote = document.getElementById('remote').value;
+    const generation = ++this.rssLoadGeneration;
+    const remoteInput = document.getElementById('remote');
+    const remote = remoteInput.value;
+    const isCurrent = () => generation === this.rssLoadGeneration && remoteInput.value === remote;
     if (!remote) {
       this.rssItems = [];
       this.renderRssPreview();
@@ -2044,6 +2192,7 @@ setupEventListeners() {
     try {
       const encoded = encodeURIComponent(remote);
       const response = await this.apiRequest(`/proxy?url=${encoded}`);
+      if (!isCurrent()) return;
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -2051,6 +2200,7 @@ setupEventListeners() {
       }
 
       const text = await response.text();
+      if (!isCurrent()) return;
 
       const parser = new DOMParser();
       const xml = parser.parseFromString(text, 'text/xml');
@@ -2079,7 +2229,6 @@ setupEventListeners() {
         // Use the first item to find match
         const match = this.findBestMatchSeries(this.rssItems[0]);
         if (match) {
-          console.log('[AutoMatch] Found series:', match.title);
           const seriesSelect = document.getElementById('series');
           seriesSelect.value = match.title;
           this.loadSeasons();
@@ -2091,15 +2240,13 @@ setupEventListeners() {
 
       this.updateProxyUrl();
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('Failed to load RSS preview:', error);
       this.rssItems = [];
 
-      const errorMsg = error.message || '加载失败';
-
-      // Show detailed error
       previewDiv.innerHTML = `
         <div class="alert alert-danger">
-          <i class="bi bi-exclamation-circle"></i> ${errorMsg}
+          <i class="bi bi-exclamation-circle" aria-hidden="true"></i> <span class="rss-error-message"></span>
           <br>
           <small class="text-muted">
             请检查：
@@ -2112,6 +2259,7 @@ setupEventListeners() {
           </small>
         </div>
       `;
+      previewDiv.querySelector('.rss-error-message').textContent = error.message || '加载失败';
     }
   }
 
@@ -2141,17 +2289,14 @@ setupEventListeners() {
       matchedItems = this.rssItems.map(title => ({ title, matched: false }));
     }
 
-    previewDiv.innerHTML = matchedItems.map((item, i) => `
-      <div class="rss-item ${item.matched ? 'matched' : ''}" data-index="${i}">
-        ${this.escapeHtml(item.title)}
-      </div>
-    `).join('');
-
-    previewDiv.querySelectorAll('.rss-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const index = parseInt(el.dataset.index);
-        this.selectRssItem(this.rssItems[index]);
-      });
+    previewDiv.replaceChildren();
+    matchedItems.forEach((item, index) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = `rss-item${item.matched ? ' matched' : ''}`;
+      row.textContent = item.title;
+      row.addEventListener('click', () => this.selectRssItem(this.rssItems[index]));
+      previewDiv.appendChild(row);
     });
   }
 
@@ -2170,8 +2315,13 @@ setupEventListeners() {
     input.value = input.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  copyEpisode() {
-    navigator.clipboard.writeText('(?<episode>\\d+)');
+  async copyEpisode() {
+    try {
+      await navigator.clipboard.writeText('(?<episode>\\d+)');
+      Toast.success('Episode 片段已复制到剪贴板');
+    } catch (error) {
+      Toast.error('复制失败: ' + error.message);
+    }
   }
 
   updateProxyUrl() {
@@ -2195,10 +2345,14 @@ setupEventListeners() {
     }
   }
 
-  copyProxyUrl() {
+  async copyProxyUrl() {
     const url = document.getElementById('proxy-url').value;
-    navigator.clipboard.writeText(url);
-    Toast.success('Proxy URL 已复制到剪贴板');
+    try {
+      await navigator.clipboard.writeText(url);
+      Toast.success('Proxy URL 已复制到剪贴板');
+    } catch (error) {
+      Toast.error('复制失败: ' + error.message);
+    }
   }
 
   async exportPatterns() {
@@ -2296,63 +2450,39 @@ setupEventListeners() {
       // 创建遮罩层
       const overlay = document.createElement('div');
       overlay.id = 'import-modal-overlay';
-      overlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      `;
+      overlay.className = 'confirm-overlay import-overlay';
       
       // 创建对话框
       const modal = document.createElement('div');
       modal.id = 'import-modal';
-      modal.style.cssText = `
-        background: white;
-        padding: 2rem;
-        border-radius: 0.5rem;
-        max-width: 500px;
-        width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        border: 1px solid #dee2e6;
-      `;
+      modal.className = 'confirm-dialog import-dialog';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'import-modal-title');
+      modal.setAttribute('aria-describedby', 'import-modal-description');
       
       modal.innerHTML = `
-        <div style="margin-bottom: 1.5rem;">
-          <h3 style="margin: 0 0 0.5rem 0; color: #495057; font-weight: 600;">选择导入模式</h3>
-          <p style="margin: 0; color: #6c757d;">请选择如何导入patterns数据：</p>
+        <div class="import-dialog-heading">
+          <h2 id="import-modal-title">选择导入模式</h2>
+          <p id="import-modal-description">选择如何处理现有 Pattern 数据。</p>
         </div>
         
-        <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-          <button id="append-btn" class="btn btn-primary" style="width: 100%; text-align: left; padding: 0.75rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong>追加模式</strong>
-            </div>
-            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
-              将新数据添加到现有patterns之后，保留原有ID
-            </small>
+        <div class="import-mode-options">
+          <button type="button" data-import-action="append" class="import-mode-option">
+            <i class="bi bi-plus-circle" aria-hidden="true"></i>
+            <strong>追加模式</strong>
+            <small>在现有 Pattern 后追加新数据并保留原有 ID。</small>
           </button>
           
-          <button id="overwrite-btn" class="btn btn-warning" style="width: 100%; text-align: left; padding: 0.75rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong>覆盖模式</strong>
-            </div>
-            <small style="display: block; margin-top: 0.25rem; color: #6c757d;">
-              删除所有现有数据，重新导入并重置ID从1开始
-            </small>
+          <button type="button" data-import-action="overwrite" class="import-mode-option">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+            <strong>覆盖模式</strong>
+            <small>替换全部现有数据，并从 1 重新生成 ID。</small>
           </button>
         </div>
         
-        <div style="text-align: right;">
-          <button id="cancel-btn" class="btn btn-secondary">取消</button>
+        <div class="import-dialog-actions">
+          <button type="button" data-import-action="cancel" class="btn btn-outline-secondary">取消</button>
         </div>
       `;
       
@@ -2360,29 +2490,46 @@ setupEventListeners() {
       document.body.appendChild(overlay);
       
       // 获取按钮元素
-      const appendBtn = document.getElementById('append-btn');
-      const overwriteBtn = document.getElementById('overwrite-btn');
-      const cancelBtn = document.getElementById('cancel-btn');
-      
-      // 添加事件监听器
-      const handleConfirm = (mode) => {
-        document.body.removeChild(overlay);
-        resolve(mode);
+      const appendBtn = modal.querySelector('[data-import-action="append"]');
+      const overwriteBtn = modal.querySelector('[data-import-action="overwrite"]');
+      const cancelBtn = modal.querySelector('[data-import-action="cancel"]');
+      const previousFocus = document.activeElement;
+      let settled = false;
+
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        if (previousFocus?.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
+        resolve(value);
       };
-      
-      const handleCancel = () => {
-        document.body.removeChild(overlay);
-        resolve(null);
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(null);
+        } else if (event.key === 'Tab') {
+          const firstAction = appendBtn;
+          const lastAction = cancelBtn;
+          if (event.shiftKey && (!modal.contains(document.activeElement) || document.activeElement === firstAction)) {
+            event.preventDefault();
+            lastAction.focus();
+          } else if (!event.shiftKey && (!modal.contains(document.activeElement) || document.activeElement === lastAction)) {
+            event.preventDefault();
+            firstAction.focus();
+          }
+        }
       };
-      
-      appendBtn.addEventListener('click', () => handleConfirm('append'));
-      overwriteBtn.addEventListener('click', () => handleConfirm('overwrite'));
-      cancelBtn.addEventListener('click', handleCancel);
+
+      appendBtn.addEventListener('click', () => finish('append'));
+      overwriteBtn.addEventListener('click', () => finish('overwrite'));
+      cancelBtn.addEventListener('click', () => finish(null));
+      document.addEventListener('keydown', handleKeydown);
       
       // 点击背景关闭
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-          handleCancel();
+          finish(null);
         }
       });
       
@@ -2390,6 +2537,7 @@ setupEventListeners() {
       modal.addEventListener('click', (e) => {
         e.stopPropagation();
       });
+      appendBtn.focus();
     });
   }
 
@@ -2409,29 +2557,46 @@ setupEventListeners() {
       if (!textMatch) return false;
 
       // 2. 状态过滤
-      if (statusFilter === 'all') return true;
-
-      const series = this.seriesList?.find(s => s.title.toLowerCase() === pattern.series.toLowerCase());
-      
-      if (statusFilter === 'not-found') {
-        return !series;
-      }
-      
-      if (statusFilter === 'case-mismatch') {
-        return series && series.title !== pattern.series;
-      }
-      
-      if (statusFilter === 'normal') {
-        return series && series.title === pattern.series;
-      }
-
-      return true;
+      return statusFilter === 'all' || this.getPatternStatus(pattern) === statusFilter;
     });
 
-    // Render both views (only visible one matters for perf, but keep both in sync)
-    this.renderPatterns(filtered);
-    this.renderPatternCards(filtered);
+    this.filteredPatterns = filtered;
+    this.updatePatternSummary();
+    this.renderCurrentView(filtered);
     this.updateBatchUI(); // 更新批量操作UI状态
+  }
+
+  renderCurrentView(patterns = this.filteredPatterns || this.allPatterns || []) {
+    if (this.patternLoadingGeneration !== null &&
+        this.patternLoadingGeneration === this.patternLoadGeneration) return;
+    if (this.patternLoadError) {
+      this.renderPatternLoadError();
+      return;
+    }
+    if (this.currentView === 'card') this.renderPatternCards(patterns);
+    else this.renderPatterns(patterns);
+  }
+
+  renderPatternLoadError() {
+    const state = document.createElement('div');
+    state.className = 'load-error-state';
+    state.setAttribute('role', 'alert');
+    state.innerHTML = '<i class="bi bi-cloud-slash" aria-hidden="true"></i><h2>加载失败</h2><p></p><button type="button" class="btn btn-primary retry-pattern-load"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>重试</button>';
+    state.querySelector('p').textContent = this.patternLoadError;
+    state.querySelector('.retry-pattern-load').addEventListener('click', () => this.loadPatterns());
+    const cards = document.getElementById('pattern-card-view');
+    const tbody = document.getElementById('pattern-table-body');
+    cards.replaceChildren();
+    tbody.replaceChildren();
+    if (this.currentView === 'card') cards.appendChild(state);
+    else {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 10;
+      cell.appendChild(state);
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    }
   }
 
   handleSortClick(th) {
@@ -2452,6 +2617,7 @@ setupEventListeners() {
     // 清除所有排序指示器
     document.querySelectorAll('.sortable').forEach(th => {
       th.classList.remove('asc', 'desc');
+      th.closest('th')?.setAttribute('aria-sort', 'none');
       const icon = th.querySelector('i');
       if (icon) {
         icon.className = 'bi bi-arrow-down-up';
@@ -2462,6 +2628,10 @@ setupEventListeners() {
     const currentTh = document.querySelector(`[data-sort="${this.currentSort.field}"]`);
     if (currentTh) {
       currentTh.classList.add(this.currentSort.direction);
+      currentTh.closest('th')?.setAttribute(
+        'aria-sort',
+        this.currentSort.direction === 'asc' ? 'ascending' : 'descending'
+      );
       const icon = currentTh.querySelector('i');
       if (icon) {
         icon.className = `bi bi-arrow-down-up ${this.currentSort.direction}`;
@@ -2470,88 +2640,15 @@ setupEventListeners() {
   }
 
   async apiRequest(url, options = {}) {
-    const defaultOptions = {
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    const mergedOptions = {
-      ...defaultOptions,
-      ...options,
-      headers: {
-        ...defaultOptions.headers,
-        ...options.headers
-      }
-    };
-
-    if (options.body) {
-      mergedOptions.body = options.body;
-    }
-
-    try {
-      const response = await fetch(url, mergedOptions);
-
-      // Handle 401 Unauthorized - token expired or invalid
-      if (response.status === 401) {
-        console.warn('[apiRequest] Received 401 Unauthorized, token may be expired');
-        await this.handleAuthExpired();
-        throw new Error('Authentication expired, please login again');
-      }
-
-      // Check if response is HTML (likely an error page)
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('text/html')) {
-        console.error('[apiRequest] Received HTML instead of JSON:', url, response.status);
-        throw new Error('Server returned HTML instead of JSON (likely a server error)');
-      }
-
-      return response;
-    } catch (error) {
-      console.error(`[apiRequest] Error fetching ${url}:`, error);
-      throw error;
-    }
+    return this.client.request(url, options);
   }
 
-  // Handle authentication expiration - clear token and redirect to login
   async handleAuthExpired() {
-    console.log('[handleAuthExpired] Clearing token and checking OIDC config...');
-    
-    // Clear local token
-    localStorage.removeItem('token');
-    this.token = null;
-
-    // Check if OIDC is enabled and auto-login is configured
-    try {
-      const response = await fetch('/auth/config');
-      if (response.ok) {
-        const config = await response.json();
-        if (config.oidcEnabled && config.oidcAutoLogin) {
-          console.log('[handleAuthExpired] OIDC auto-login enabled, redirecting to OIDC login...');
-          Toast.warning('Session expired, redirecting to login...');
-          // Small delay to show the toast before redirect
-          setTimeout(() => {
-            window.location.href = '/auth/oidc/login';
-          }, 500);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('[handleAuthExpired] Failed to check OIDC config:', e);
-    }
-
-    // Fallback: show login page
-    console.log('[handleAuthExpired] Showing login page');
+    if (this.authExpired) return;
+    this.authExpired = true;
+    this.showLoggedOut();
     Toast.warning('Session expired, please login again');
-    document.getElementById('main-container').classList.add('d-none');
-    document.getElementById('login-container').classList.remove('d-none');
-  }
-
-  escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    await this.checkOidcConfig();
   }
 
   // ===== Auto-detect Subgroup from RSS =====
@@ -2622,21 +2719,33 @@ setupEventListeners() {
       return { total: 0, downloaded: 0, missing: 0, percent: 0 };
     }
 
-    const total = season.statistics.episodeCount || 0;
-    const downloaded = season.statistics.episodeFileCount || 0;
+    const normalizeCount = value => {
+      const count = Number(value);
+      return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+    };
+    const total = normalizeCount(season.statistics.episodeCount);
+    const downloaded = normalizeCount(season.statistics.episodeFileCount);
     
     // In Sonarr v3, episodeFileCount is what we have. 
     // totalEpisodeCount might include unmonitored ones.
     // For simplicity, we use episodeCount as total.
     
     const missing = Math.max(0, total - downloaded);
-    const percent = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+    const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
 
     return { total, downloaded, missing, percent };
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('[App] Mikanarr v2.1.0 - Build: 2026-01-23');
-  new MikanarrApp();
-});
+if (typeof module === 'object' && module.exports) {
+  module.exports = { MikanarrApp };
+} else {
+  window.MikanarrApp = MikanarrApp;
+  document.addEventListener('DOMContentLoaded', () => {
+    new MikanarrApp();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .catch(error => console.error('Service Worker registration failed:', error));
+    }
+  });
+}

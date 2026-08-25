@@ -1,162 +1,131 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
+const { createOidcProvider, isOidcAuthorized } = require('../oidc');
+const { readCookie } = require('../session');
 
-const router = express.Router();
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+const FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILURE_CLIENTS = 1024;
+const OIDC_ERROR_TEXT = 'OIDC authentication failed';
+const OIDC_COOKIE_NAMES = Object.freeze(['oidc_state', 'oidc_nonce', 'oidc_verifier']);
+
+function credentialsMatch(actual, expected) {
+  const left = Buffer.from(typeof actual === 'string' ? actual : '');
+  const right = Buffer.from(expected);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-const privKeyPath = path.join(dataDir, 'jwt.key');
-const pubKeyPath = path.join(dataDir, 'jwt.key.pub');
+function reserveFailureWindow(failures, address, now, capacity = MAX_FAILURE_CLIENTS) {
+  for (const [storedAddress, failure] of failures) {
+    if (now - failure.startedAt >= FAILURE_WINDOW_MS) failures.delete(storedAddress);
+  }
+  if (failures.size >= capacity) return undefined;
+  const failure = { count: 0, startedAt: now };
+  failures.set(address, failure);
+  return failure;
+}
 
-if (!fs.existsSync(privKeyPath) || !fs.existsSync(pubKeyPath)) {
-  const { generateKeyPairSync } = require('crypto');
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
-    modulusLength: 4096,
-    publicKeyEncoding: {
-      type: 'spki',
-      format: 'pem'
-    },
-    privateKeyEncoding: {
-      type: 'pkcs8',
-      format: 'pem'
+function createAuthRouter({ config, sessionManager, oidcProvider, oidcProviderFactory = createOidcProvider, clock = Date.now, logger = console, failureCapacity = MAX_FAILURE_CLIENTS }) {
+  const router = express.Router();
+  const failures = new Map();
+  let discoveredProvider;
+
+  async function provider() {
+    if (oidcProvider) return oidcProvider;
+    const pending = discoveredProvider || (discoveredProvider = oidcProviderFactory(config.auth.oidc));
+    try {
+      return await pending;
+    } catch (error) {
+      if (discoveredProvider === pending) discoveredProvider = undefined;
+      throw error;
     }
-  });
-  fs.writeFileSync(privKeyPath, privateKey);
-  fs.writeFileSync(pubKeyPath, publicKey);
-}
-
-const privKey = fs.readFileSync(privKeyPath);
-const pubKey = fs.readFileSync(pubKeyPath);
-
-router.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
-    const token = jwt.sign({ username }, privKey, { algorithm: 'RS512', expiresIn: '24h' });
-    res.json({ token });
-  } else {
-    res.status(401).send('Username or password incorrect');
-  }
-});
-
-// OIDC Routes
-const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
-const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
-const OIDC_AUTH_URL = process.env.OIDC_AUTH_URL;
-const OIDC_TOKEN_URL = process.env.OIDC_TOKEN_URL;
-const OIDC_REDIRECT_URI = process.env.OIDC_REDIRECT_URI;
-const OIDC_AUTO_LOGIN = process.env.OIDC_AUTO_LOGIN === 'true';
-
-router.get('/config', (req, res) => {
-  res.json({
-    oidcEnabled: !!(OIDC_CLIENT_ID && OIDC_AUTH_URL && OIDC_REDIRECT_URI),
-    oidcAutoLogin: OIDC_AUTO_LOGIN
-  });
-});
-
-router.get('/oidc/login', (req, res) => {
-  if (!OIDC_CLIENT_ID || !OIDC_AUTH_URL || !OIDC_REDIRECT_URI) {
-    return res.status(500).send('OIDC not configured');
   }
 
-  const state = crypto.randomBytes(16).toString('hex');
-  // In a production app, store state in cookie to verify later
-  // res.cookie('oidc_state', state, { httpOnly: true, secure: true });
-
-  const params = new URLSearchParams({
-    client_id: OIDC_CLIENT_ID,
-    redirect_uri: OIDC_REDIRECT_URI,
-    response_type: 'code',
-    scope: 'openid profile email',
-    state: state
-  });
-
-  res.redirect(`${OIDC_AUTH_URL}?${params.toString()}`);
-});
-
-router.get('/oidc/callback', async (req, res) => {
-  const { code, error } = req.query;
-
-  if (error) {
-    return res.status(400).send(`OIDC Error: ${error}`);
+  function clearOidcCookies(res) {
+    const { maxAge, ...options } = sessionManager.temporaryCookieOptions;
+    for (const name of OIDC_COOKIE_NAMES) res.clearCookie(name, options);
   }
 
-  if (!code) {
-    return res.status(400).send('No code provided');
+  function oidcError(res, status) {
+    return res.status(status).type('text/plain').send(OIDC_ERROR_TEXT);
   }
 
-  try {
-    const params = new URLSearchParams();
-    params.append('grant_type', 'authorization_code');
-    params.append('code', code);
-    params.append('redirect_uri', OIDC_REDIRECT_URI);
-    params.append('client_id', OIDC_CLIENT_ID);
-    params.append('client_secret', OIDC_CLIENT_SECRET);
-
-    const tokenRes = await axios.post(OIDC_TOKEN_URL, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+  router.post('/login', (req, res) => {
+    if (!config.auth.local.enabled) {
+      return res.status(404).json({ error: 'Local authentication is not available', code: 'LOCAL_AUTH_DISABLED' });
+    }
+    const now = clock();
+    let failure = failures.get(req.ip);
+    if (failure && now - failure.startedAt >= FAILURE_WINDOW_MS) {
+      failures.delete(req.ip);
+      failure = undefined;
+    }
+    if (failure?.count >= 5) {
+      return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
+    }
+    if (!failure) {
+      failure = reserveFailureWindow(failures, req.ip, now, failureCapacity);
+      if (!failure) {
+        return res.status(429).json({ error: 'Too many login attempts', code: 'LOGIN_RATE_LIMITED' });
       }
-    });
-
-    // We trust the IdP. If we got a valid token, we assume the user is authenticated.
-    // In a real app, you might validate the ID token signature or fetch user info to check permissions.
-    // Here we just map it to the admin user or a generic OIDC user.
-    
-    // Generate Mikanarr internal Token
-    const token = jwt.sign({ username: 'sso_user', role: 'admin' }, privKey, { algorithm: 'RS512', expiresIn: '24h' });
-
-    // Return HTML to save token and redirect
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Login Successful</title>
-      </head>
-      <body>
-        <p>Login successful, redirecting...</p>
-        <script>
-          localStorage.setItem('token', '${token}');
-          window.location.href = '/';
-        </script>
-      </body>
-      </html>
-    `;
-    
-    res.send(html);
-
-  } catch (error) {
-    console.error('OIDC Callback Error:', error.response?.data || error.message);
-    res.status(500).send(`Authentication failed: ${error.message}`);
-  }
-});
-
-function verifyToken(req, res, next) {
-  let token = null;
-  const authHeader = req.headers.authorization;
-  
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else if (req.query.token) {
-    token = req.query.token;
-  }
-
-  if (!token) return res.status(401).json({ error: 'No token provided' });
-
-  jwt.verify(token, pubKey, { algorithms: ['RS512'] }, (err, decoded) => {
-    if (err) {
-      console.error('[auth] Token verification failed:', err.message);
-      return res.status(401).json({ error: 'Invalid token' });
     }
-    req.user = decoded;
-    next();
+    const { username, password } = req.body || {};
+    if (credentialsMatch(username, config.auth.local.username) && credentialsMatch(password, config.auth.local.password)) {
+      failures.delete(req.ip);
+      const user = { username: config.auth.local.username };
+      sessionManager.issue(res, user);
+      return res.json({ user });
+    }
+    failure.count += 1;
+    return res.status(401).json({ error: 'Username or password incorrect', code: 'INVALID_CREDENTIALS' });
   });
+
+  router.get('/session', sessionManager.verifyRequest, (req, res) => res.json({ user: { username: req.user.username } }));
+  router.post('/logout', (req, res) => {
+    sessionManager.clear(res);
+    res.status(204).send();
+  });
+
+  router.get('/config', (req, res) => res.json({ oidcEnabled: Boolean(config.auth.oidc.enabled), oidcAutoLogin: config.auth.oidc.autoLogin }));
+  router.get('/oidc/login', async (req, res) => {
+    if (!config.auth.oidc.enabled) {
+      return res.status(404).json({ error: 'OIDC authentication is not available', code: 'OIDC_DISABLED' });
+    }
+    try {
+      const request = await (await provider()).authorizationRequest();
+      res.cookie('oidc_state', request.state, sessionManager.temporaryCookieOptions);
+      res.cookie('oidc_nonce', request.nonce, sessionManager.temporaryCookieOptions);
+      res.cookie('oidc_verifier', request.verifier, sessionManager.temporaryCookieOptions);
+      return res.redirect(String(request.url));
+    } catch {
+      logger.error('[auth] OIDC authorization request failed');
+      return res.status(500).json({ error: 'OIDC authentication failed', code: 'OIDC_FAILURE' });
+    }
+  });
+
+  router.get('/oidc/callback', async (req, res) => {
+    clearOidcCookies(res);
+    if (!config.auth.oidc.enabled || req.query.error) return oidcError(res, 400);
+    const checks = {
+      state: readCookie(req, 'oidc_state'),
+      nonce: readCookie(req, 'oidc_nonce'),
+      verifier: readCookie(req, 'oidc_verifier')
+    };
+    if (!req.query.code || !req.query.state || !checks.state || !checks.nonce || !checks.verifier || req.query.state !== checks.state) {
+      return oidcError(res, 400);
+    }
+    try {
+      const currentUrl = new URL(req.originalUrl, config.auth.oidc.redirectUri);
+      const claims = await (await provider()).exchange(currentUrl, checks);
+      if (!isOidcAuthorized(claims, config.auth.oidc)) return oidcError(res, 403);
+      sessionManager.issue(res, { username: claims.preferred_username || claims.email || claims.sub });
+      return res.redirect('/');
+    } catch {
+      logger.error('[auth] OIDC callback failed');
+      return oidcError(res, 500);
+    }
+  });
+  router.verifyToken = sessionManager.verifyRequest;
+  return router;
 }
 
-module.exports = router;
-module.exports.verifyToken = verifyToken;
+module.exports = { createAuthRouter, reserveFailureWindow };

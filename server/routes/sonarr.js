@@ -1,50 +1,56 @@
 const express = require('express');
-const { verifyToken } = require('./auth');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
-const router = express.Router();
-router.use(verifyToken);
-
-const SONARR_API_KEY = process.env.SONARR_API_KEY;
-const SONARR_HOST = process.env.SONARR_HOST;
-
-if (!SONARR_API_KEY || !SONARR_HOST) {
-  console.error('[Sonarr Proxy] Missing configuration');
-  router.use((req, res) => {
-    res.status(503).json({ error: 'Sonarr proxy not configured' });
+function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddleware = createProxyMiddleware }) {
+  const router = express.Router();
+  router.use(verifyToken);
+  if (!config.sonarr.apiKey || !config.sonarr.host) {
+    router.use((req, res) => res.status(503).json({ error: 'Sonarr proxy not configured', code: 'SONARR_NOT_CONFIGURED' }));
+    return router;
+  }
+  router.use((req, res, next) => {
+    req.sonarrStartedAt = Date.now();
+    next();
   });
-} else {
-  router.use('/', createProxyMiddleware({
-    target: SONARR_HOST,
+  router.use('/', proxyMiddleware({
+    target: config.sonarr.host,
     changeOrigin: true,
-    secure: false,
-    pathRewrite(path, req) {
-      // req.url in express router does not include the mount point (/sonarr)
-      // path argument might be the same as req.url
-      
-      // Ensure we construct the target path correctly
-      // We expect input like /api/v3/series (after stripping /sonarr)
-      // And we want to append apikey
-      
-      const searchParams = new URLSearchParams(new URL(req.originalUrl, 'http://localhost').search);
-      searchParams.append('apikey', SONARR_API_KEY);
-      
-      // path here is likely /api/v3/series
-      // remove any query string from path first as we will append it back
-      const pathBase = path.split('?')[0];
-      
-      return `${pathBase}?${searchParams.toString()}`;
+    secure: !config.sonarr.tlsInsecure,
+    timeout: config.http.timeoutMs,
+    proxyTimeout: config.http.timeoutMs,
+    pathRewrite(proxyPath) {
+      const url = new URL(proxyPath, 'http://localhost');
+      for (const key of [...url.searchParams.keys()]) {
+        if (['token', 'apikey'].includes(key.toLowerCase())) url.searchParams.delete(key);
+      }
+      return `${url.pathname}${url.search}`;
     },
-    onProxyReq: (proxyReq, req, res) => {
-      console.log(`[Sonarr Proxy] ${req.method} ${req.originalUrl} -> ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`);
-    },
-    onError: (err, req, res) => {
-      console.error('[Sonarr Proxy] Error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message || 'Proxy error' });
+    on: {
+      proxyReq(proxyReq) {
+        proxyReq.removeHeader('cookie');
+        proxyReq.removeHeader('authorization');
+        proxyReq.removeHeader('proxy-authorization');
+        proxyReq.setHeader('X-Api-Key', config.sonarr.apiKey);
+      },
+      proxyRes(proxyRes, req, res) {
+        delete proxyRes.headers['set-cookie'];
+        proxyRes.once('aborted', () => res.destroy());
+        const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
+        logger.log(`[Sonarr Proxy] method=${req.method} path=${pathname} status=${proxyRes.statusCode} duration_ms=${Date.now() - req.sonarrStartedAt}`);
+      },
+      error(error, req, res) {
+        const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
+        logger.error(`[Sonarr Proxy] method=${req.method} path=${pathname} status=502 duration_ms=${Date.now() - req.sonarrStartedAt}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Sonarr upstream request failed', code: 'UPSTREAM_FAILURE' }));
+        } else {
+          res.destroy();
+        }
       }
     }
   }));
+  return router;
 }
 
-module.exports = router;
+module.exports = { createSonarrRouter };

@@ -2,22 +2,36 @@
   "name": "mikanarr-refactor",
   "version": "2.0.0",
   "description": "Mikanarr Refactor - Bridge between Mikan Anime and Sonarr",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
+  "packageManager": "npm@11.18.0",
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  },
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "nodemon server/index.js"
+    "dev": "nodemon server/index.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "check:syntax": "node --check server/*.js && node --check server/routes/*.js && node --check public/js/*.js && node --check public/sw.js",
+    "check": "npm run check:syntax && npm test"
   },
   "dependencies": {
-    "axios": "^1.13.2",
-    "better-sqlite3": "^12.6.2",
-    "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
+    "axios": "^1.18.1",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "http-proxy-middleware": "^3.0.5",
+    "http-proxy-middleware": "^3.0.7",
     "jsonwebtoken": "^9.0.3",
+    "openid-client": "6.8.4",
+    "safe-regex2": "5.1.1",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "jsdom": "29.1.1",
+    "nodemon": "^3.0.3",
+    "yaml": "2.9.0"
   }
 }

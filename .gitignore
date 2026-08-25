@@ -1,6 +1,9 @@
 node_modules
+.worktrees/
 dist
 .env
+backups/
+*.tar.gz
 data/*.sqlite
 data/jwt.key
 data/jwt.key.pub

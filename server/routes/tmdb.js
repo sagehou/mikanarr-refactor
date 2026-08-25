@@ -1,157 +1,128 @@
 const express = require('express');
 const axios = require('axios');
-const { verifyToken } = require('./auth');
-const { getTmdbCache, getTmdbCacheByIds, upsertTmdbCache } = require('../database');
+const { mapConcurrent } = require('../concurrency');
 
-const router = express.Router();
-router.use(verifyToken);
-
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-
-if (!TMDB_API_KEY) {
-  console.warn('TMDB_API_KEY not set, TMDB features will be disabled');
+function tmdbAxiosOptions(config) {
+  return {
+    timeout: config.tmdb.timeoutMs,
+    maxContentLength: config.http.maxXmlBytes,
+    maxBodyLength: config.http.maxXmlBytes
+  };
 }
 
-// Get cached Chinese names for series list
-router.get('/cache', async (req, res) => {
-  try {
-    const cache = getTmdbCache();
-    // Convert to map for easy lookup: { tmdbId: titleZh }
-    const cacheMap = {};
-    cache.forEach(item => {
-      cacheMap[item.tmdb_id] = item.title_zh;
-    });
-    res.json(cacheMap);
-  } catch (error) {
-    console.error('[TMDB Cache] Error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
+function updatedAtMs(value) {
+  if (typeof value !== 'string') return NaN;
+  return Date.parse(`${value.replace(' ', 'T')}Z`);
+}
 
-// Batch update Chinese names for new series
-router.post('/cache/sync', async (req, res) => {
-  if (!TMDB_API_KEY) {
-    return res.status(503).json({ error: 'TMDB not configured' });
-  }
+function isFreshCache(item, config, now = Date.now()) {
+  const ttl = item.title_zh === null ? config.tmdb.negativeTtlMs : config.tmdb.cacheTtlMs;
+  return now - updatedAtMs(item.updated_at) < ttl;
+}
 
-  const { series } = req.body; // Array of { tmdbId, titleEn }
-  if (!series || !Array.isArray(series)) {
-    return res.status(400).json({ error: 'series array required' });
-  }
-
-  try {
-    // Get existing cache
-    const tmdbIds = series.map(s => s.tmdbId).filter(id => id);
-    const existingCache = getTmdbCacheByIds(tmdbIds);
-    const existingIds = new Set(existingCache.map(c => c.tmdb_id));
-
-    // Find new series that need to be fetched
-    const newSeries = series.filter(s => s.tmdbId && !existingIds.has(s.tmdbId));
-
-    console.log(`[TMDB Cache] Syncing ${newSeries.length} new series out of ${series.length} total`);
-
-    // Fetch Chinese names for new series (with rate limiting)
-    const results = [];
-    for (const s of newSeries) {
-      try {
-        const response = await axios.get(
-          `https://api.themoviedb.org/3/tv/${s.tmdbId}`,
-          {
-            params: {
-              api_key: TMDB_API_KEY,
-              language: 'zh-CN'
-            },
-            timeout: 5000
-          }
-        );
-        const titleZh = response.data.name || null;
-        upsertTmdbCache(s.tmdbId, s.titleEn, titleZh);
-        results.push({ tmdbId: s.tmdbId, titleZh });
-        
-        // Rate limit: wait 100ms between requests
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        console.warn(`[TMDB Cache] Failed to fetch ${s.tmdbId}:`, error.message);
-        // Cache with null titleZh to avoid repeated failed requests
-        upsertTmdbCache(s.tmdbId, s.titleEn, null);
-      }
+function createTmdbRouter({ config, database, verifyToken, httpClient = axios, logger = console }) {
+  const router = express.Router();
+  const apiKey = config.tmdb.apiKey;
+  const requestOptions = tmdbAxiosOptions(config);
+  router.use(verifyToken);
+  router.get('/cache', (req, res) => {
+    try {
+      res.json(Object.fromEntries(database.getTmdbCache().map(item => [item.tmdb_id, item.title_zh])));
+    } catch {
+      logger.error('[TMDB Cache] route=/tmdb/cache status=500');
+      res.status(500).json({ error: 'Internal server error', code: 'REQUEST_FAILED' });
     }
-
-    // Return updated cache
-    const updatedCache = getTmdbCache();
-    const cacheMap = {};
-    updatedCache.forEach(item => {
-      cacheMap[item.tmdb_id] = item.title_zh;
-    });
-
-    res.json({ 
-      synced: results.length,
-      cache: cacheMap 
-    });
-  } catch (error) {
-    console.error('[TMDB Cache Sync] Error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/tv/:id', async (req, res) => {
-  if (!TMDB_API_KEY) {
-    return res.status(503).json({ error: 'TMDB not configured' });
-  }
-  
-  const { id } = req.params;
-  const { language = 'zh-CN' } = req.query;
-  
-  try {
-    const response = await axios.get(
-      `https://api.themoviedb.org/3/tv/${id}`,
-      {
-        params: {
-          api_key: TMDB_API_KEY,
-          language,
-          append_to_response: 'external_ids,credits'
+  });
+  router.post('/cache/sync', async (req, res) => {
+    if (!apiKey) return res.status(503).json({ error: 'TMDB not configured', code: 'TMDB_NOT_CONFIGURED' });
+    const { series } = req.body;
+    if (!Array.isArray(series)) return res.status(400).json({ error: 'series array required', code: 'INVALID_REQUEST' });
+    try {
+      const candidates = series.filter(item => item?.tmdbId);
+      const cached = new Map(database.getTmdbCacheByIds(candidates.map(item => item.tmdbId))
+        .map(item => [String(item.tmdb_id), item]));
+      const now = Date.now();
+      const pending = candidates.filter(item => {
+        const existing = cached.get(String(item.tmdbId));
+        return !existing || !isFreshCache(existing, config, now);
+      });
+      const results = await mapConcurrent(pending, config.tmdb.concurrency, async seriesItem => {
+        try {
+          const response = await httpClient.get(
+            `https://api.themoviedb.org/3/tv/${encodeURIComponent(seriesItem.tmdbId)}`,
+            {
+              ...requestOptions,
+              params: { api_key: apiKey, language: 'zh-CN' }
+            }
+          );
+          const titleZh = typeof response.data?.name === 'string' && response.data.name ? response.data.name : null;
+          if (titleZh !== null) {
+            database.upsertTmdbCache(seriesItem.tmdbId, seriesItem.titleEn, titleZh);
+            return { tmdbId: seriesItem.tmdbId, titleZh };
+          }
+        } catch (error) {
+          if (error.response?.status === 404) {
+            database.upsertTmdbCache(seriesItem.tmdbId, seriesItem.titleEn, null);
+          } else {
+            logger.warn('[TMDB Cache] route=/tmdb/cache/sync status=upstream_failure');
+          }
         }
-      }
-    );
-    res.json(response.data);
-  } catch (error) {
-    const axiosError = error;
-    res.status(axiosError.response?.status || 500).json({ 
-      error: axiosError.response?.data || axiosError.message 
-    });
-  }
-});
-
-router.get('/search', async (req, res) => {
-  // ... existing search logic ...
-});
-
-router.get('/find/:id', async (req, res) => {
-  if (!TMDB_API_KEY) {
-    return res.status(503).json({ error: 'TMDB not configured' });
-  }
-  
-  const { id } = req.params; // External ID (e.g. TVDB ID)
-  const { source = 'tvdb_id', language = 'zh-CN' } = req.query;
-  
-  try {
-    const response = await axios.get(
-      `https://api.themoviedb.org/3/find/${id}`,
-      {
-        params: {
-          api_key: TMDB_API_KEY,
-          external_source: source,
-          language
+        return null;
+      });
+      res.json({
+        synced: results.filter(Boolean).length,
+        cache: Object.fromEntries(database.getTmdbCache().map(item => [item.tmdb_id, item.title_zh]))
+      });
+    } catch {
+      logger.error('[TMDB Cache] route=/tmdb/cache/sync status=500');
+      res.status(500).json({ error: 'Internal server error', code: 'REQUEST_FAILED' });
+    }
+  });
+  router.get('/tv/:id', async (req, res) => {
+    if (!apiKey) return res.status(503).json({ error: 'TMDB not configured', code: 'TMDB_NOT_CONFIGURED' });
+    try {
+      const response = await httpClient.get(
+        `https://api.themoviedb.org/3/tv/${encodeURIComponent(req.params.id)}`,
+        {
+          ...requestOptions,
+          params: {
+            api_key: apiKey,
+            language: req.query.language || 'zh-CN',
+            append_to_response: 'external_ids,credits'
+          }
         }
+      );
+      res.json(response.data);
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return res.status(404).json({ error: 'TMDB item not found', code: 'TMDB_NOT_FOUND' });
       }
-    );
-    res.json(response.data);
-  } catch (error) {
-    const axiosError = error;
-    res.status(axiosError.response?.status || 500).json({ 
-      error: axiosError.response?.data || axiosError.message 
-    });
-  }
-});
+      res.status(502).json({ error: 'TMDB upstream request failed', code: 'UPSTREAM_FAILURE' });
+    }
+  });
+  router.get('/find/:id', async (req, res) => {
+    if (!apiKey) return res.status(503).json({ error: 'TMDB not configured', code: 'TMDB_NOT_CONFIGURED' });
+    try {
+      const response = await httpClient.get(
+        `https://api.themoviedb.org/3/find/${encodeURIComponent(req.params.id)}`,
+        {
+          ...requestOptions,
+          params: {
+            api_key: apiKey,
+            external_source: req.query.source || 'tvdb_id',
+            language: req.query.language || 'zh-CN'
+          }
+        }
+      );
+      res.json(response.data);
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return res.status(404).json({ error: 'TMDB item not found', code: 'TMDB_NOT_FOUND' });
+      }
+      res.status(502).json({ error: 'TMDB upstream request failed', code: 'UPSTREAM_FAILURE' });
+    }
+  });
+  return router;
+}
 
-module.exports = router;
+module.exports = { createTmdbRouter };

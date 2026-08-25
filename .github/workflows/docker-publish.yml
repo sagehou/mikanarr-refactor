@@ -8,7 +8,6 @@ on:
     tags:
       - 'v*'
     paths-ignore:
-      - '.github/**'
       - '*.md'
       - 'LICENSE'
       - '.gitignore'
@@ -19,7 +18,6 @@ on:
       - master
       - main
     paths-ignore:
-      - '.github/**'
       - '*.md'
       - 'LICENSE'
       - '.gitignore'
@@ -32,7 +30,11 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
   build-and-push:
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: read

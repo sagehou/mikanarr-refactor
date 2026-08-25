@@ -1,75 +1,51 @@
 const express = require('express');
 const axios = require('axios');
-const { verifyToken } = require('./auth');
+const { MIKAN_POLICY, parseAllowedUrl, boundedAxiosOptions } = require('../urlPolicy');
 
-const router = express.Router();
-router.use(verifyToken);
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
-router.get('/', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'Missing url parameter' });
-
-  console.log(`[Mikan Proxy] Request URL: ${url}`);
-
-  if (!url.startsWith('https://mikanani.me')) {
-    console.error('[Mikan Proxy] Invalid URL domain');
-    return res.status(403).json({ error: 'Only mikanani.me URLs are allowed' });
-  }
-
-  try {
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+function createProxyRouter({ config, verifyToken, httpClient = axios, logger = console }) {
+  const router = express.Router();
+  router.use(verifyToken);
+  router.get('/', async (req, res) => {
+    const startedAt = Date.now();
+    let status = 200;
+    let bytes = 0;
+    try {
+      if (!req.query.url) {
+        status = 400;
+        return res.status(status).json({ error: 'Missing url parameter', code: 'MISSING_URL' });
       }
-    });
-    console.log(`[Mikan Proxy] Response: ${response.status}, Data length: ${response.data?.length || 0}`);
-    
-    let xmlData = response.data;
-    
-    // 处理每个item，将torrent/pubDate移动到item级别
-    const result = xmlData.replace(/<item>([\s\S]*?)<\/item>/g, (match, itemContent) => {
-      // 尝试从torrent元素中提取pubDate
-      const torrentMatch = itemContent.match(/<torrent[^>]*>([\s\S]*?)<\/torrent>/);
-      let pubDate = null;
-      
-      if (torrentMatch) {
-        const torrentContent = torrentMatch[1];
-        const pubDateMatch = torrentContent.match(/<pubDate>([^<]+)<\/pubDate>/);
-        if (pubDateMatch) {
-          pubDate = pubDateMatch[1];
-        }
+      let url;
+      try {
+        url = parseAllowedUrl(req.query.url, MIKAN_POLICY);
+      } catch {
+        status = 403;
+        return res.status(status).json({ error: 'URL not allowed', code: 'URL_NOT_ALLOWED' });
       }
-      
-      // 如果找到了pubDate，将它添加到item中（title之后，enclosure之前）
-      if (pubDate) {
-        // 移除torrent元素
-        let newContent = itemContent.replace(/<torrent[^>]*>[\s\S]*?<\/torrent>/g, '');
-        
-        // 在</title>后添加pubDate
-        newContent = newContent.replace(/<\/title>/, `</title><pubDate>${pubDate}</pubDate>`);
-        
-        return `<item>${newContent}</item>`;
-      }
-      
-      // 如果没有pubDate，添加一个
-      const now = new Date().toISOString();
-      let newContent = itemContent.replace(/<\/title>/, `</title><pubDate>${now}</pubDate>`);
-      
-      return `<item>${newContent}</item>`;
-    });
-    
-    res.set('Content-Type', 'application/xml');
-    res.send(result);
-    
-  } catch (error) {
-    const axiosError = error;
-    console.error('[Mikan Proxy] Error:', axiosError.message);
-    console.error('[Mikan Proxy] Error details:', axiosError.response?.data || axiosError.config?.url);
-    res.status(axiosError.response?.status || 500).json({
-      error: axiosError.response?.data || axiosError.message || 'Failed to fetch RSS'
-    });
-  }
-});
+      const response = await httpClient.get(url.href, {
+        ...boundedAxiosOptions(MIKAN_POLICY, config),
+        headers: { 'User-Agent': USER_AGENT }
+      });
+      if (!Buffer.isBuffer(response.data) && typeof response.data !== 'string') throw new Error('invalid response');
+      bytes = Buffer.byteLength(response.data);
+      if (bytes > config.http.maxXmlBytes) throw new Error('response too large');
+      const xml = Buffer.isBuffer(response.data) ? response.data.toString('utf8') : response.data;
+      const result = xml.replace(/<item>([\s\S]*?)<\/item>/g, (match, itemContent) => {
+        const pubDate = itemContent.match(/<torrent[^>]*>[\s\S]*?<pubDate>([^<]+)<\/pubDate>[\s\S]*?<\/torrent>/)?.[1] || new Date().toISOString();
+        const content = itemContent.replace(/<torrent[^>]*>[\s\S]*?<\/torrent>/g, '').replace(/<\/title>/, `</title><pubDate>${pubDate}</pubDate>`);
+        return `<item>${content}</item>`;
+      });
+      res.type('application/xml').send(result);
+    } catch {
+      status = 502;
+      res.status(status).json({ error: 'Upstream request failed', code: 'UPSTREAM_FAILURE' });
+    } finally {
+      const message = `[Mikan Proxy] route=/proxy status=${status} bytes=${bytes} duration_ms=${Date.now() - startedAt}`;
+      (status >= 500 ? logger.error : logger.log)(message);
+    }
+  });
+  return router;
+}
 
-module.exports = router;
+module.exports = { createProxyRouter };

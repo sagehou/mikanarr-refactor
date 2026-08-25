@@ -1,102 +1,113 @@
 const express = require('express');
 const axios = require('axios');
 const xml2js = require('xml2js');
-const { getPatterns, incrementMatchCount } = require('../database');
+const safeRegex = require('safe-regex2');
+const { hasNamedEpisodeGroup } = require('../patternValidation');
+const { MIKAN_POLICY, parseAllowedUrl, boundedAxiosOptions } = require('../urlPolicy');
 
-const router = express.Router();
-
-function transformTitle(title, pattern) {
-  try {
-    const regex = new RegExp(`^${pattern.pattern}$`);
-    const match = title.match(regex);
-    if (!match?.groups?.episode) return null;
-
-    const episodeWithOffset = parseInt(match.groups.episode) + (pattern.offset || 0);
-    const seasonNum = String(pattern.season).padStart(2, '0');
-    const episodeNum = String(episodeWithOffset).padStart(2, '0');
-    const releasegroup = pattern.releasegroup || '';
-
-    return `[${releasegroup}] ${pattern.series} - S${seasonNum}E${episodeNum} - ${pattern.language} - ${pattern.quality}`;
-  } catch (error) {
-    return null;
-  }
+function hasValidOffset(pattern) {
+  return Number.isSafeInteger(pattern.offset) && pattern.offset >= -100000 && pattern.offset <= 100000;
 }
 
-router.use(async (req, res) => {
-  try {
-    console.log(`[RSS] Request: ${req.path} with query:`, req.query);
-    console.log(`[RSS] Original URL: ${req.originalUrl}`);
-
-    const patterns = getPatterns();
-
-    // Use req.originalUrl to get the full path including /RSS prefix
-    const originalPath = req.originalUrl.split('?')[0];
-    const queryString = new URLSearchParams(req.query).toString();
-    const mikanUrl = `https://mikanani.me${originalPath}${queryString ? '?' + queryString : ''}`;
-
-    console.log(`[RSS] Fetching from: ${mikanUrl}`);
-
-    const response = await axios.get(mikanUrl, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-
-    const parser = new xml2js.Parser();
-    const result = await parser.parseStringPromise(response.data);
-
-    const items = [];
-    for (const item of result.rss.channel[0].item || []) {
-      const title = item.title[0];
-      // pubDate is inside <torrent> element in Mikan RSS
-      const pubDate = item['torrent']?.[0]?.pubDate?.[0] || item.pubDate?.[0];
-      const enclosureAttrs = item.enclosure?.[0]?.$;
-      const link = item.link?.[0];
-
-      for (const pattern of patterns) {
-        const newTitle = transformTitle(title, pattern);
-        if (newTitle) {
-          // Increment match count (async, don't wait)
-          incrementMatchCount(pattern.id);
-          
-          items.push({
-            title: [newTitle],
-            pubDate: pubDate ? [pubDate] : undefined,
-            // xml2js Builder requires { $: {...} } format for XML attributes
-            enclosure: enclosureAttrs ? [{ $: enclosureAttrs }] : undefined,
-            link,
-            guid: [{ $: { isPermaLink: 'true' }, _: link }],
-          });
-          break;
-        }
-      }
+function compilePatterns(patterns) {
+  const compiled = [];
+  for (const pattern of patterns) {
+    try {
+      if (!hasValidOffset(pattern)) continue;
+      const expression = new RegExp(`^(?:${pattern.pattern})$`);
+      if (!hasNamedEpisodeGroup(expression.source) || !safeRegex(expression)) continue;
+      compiled.push({ pattern, expression });
+    } catch {
+      // Legacy rows may predate Pattern validation.
     }
-
-    result.rss.channel[0].item = items;
-    const builder = new xml2js.Builder();
-    res.set('Content-Type', 'application/xml');
-    res.send(builder.buildObject(result));
-  } catch (error) {
-    console.error('[RSS] Transform error:', error.message);
-    console.error('[RSS] Error details:', {
-      path: req.path,
-      query: req.query,
-      error: {
-        message: error.message,
-        code: error.code,
-        status: error.response?.status,
-        data: error.response?.data
-      },
-      stack: error.stack
-    });
-
-    const errorMessage = error.response?.status
-      ? `Mikanani returned ${error.response.status}: ${error.message}`
-      : `Failed to fetch from Mikanani: ${error.message}`;
-
-    res.status(500).send(`Error: ${errorMessage}`);
   }
-});
+  return compiled;
+}
 
-module.exports = router;
+function transformTitle(title, compiledPattern) {
+  if (!hasValidOffset(compiledPattern.pattern)) return null;
+  const match = compiledPattern.expression.exec(title);
+  if (!match?.groups?.episode) return null;
+  const pattern = compiledPattern.pattern;
+  if (!/^[+-]?\d+$/.test(match.groups.episode)) return null;
+  const parsedEpisode = Number(match.groups.episode);
+  if (!Number.isSafeInteger(parsedEpisode)) return null;
+  const episode = String(parsedEpisode + pattern.offset).padStart(2, '0');
+  return `[${pattern.releasegroup || ''}] ${pattern.series} - S${String(pattern.season).padStart(2, '0')}E${episode} - ${pattern.language} - ${pattern.quality}`;
+}
+
+function createRssRouter({ database, config, httpClient = axios, logger = console }) {
+  const router = express.Router();
+  router.use(async (req, res) => {
+    const startedAt = Date.now();
+    let status = 200;
+    try {
+      let result;
+      let channel;
+      try {
+        const originalPath = req.originalUrl.split('?')[0];
+        const queryString = new URLSearchParams(req.query).toString();
+        const upstreamUrl = parseAllowedUrl(
+          `https://mikanani.me${originalPath}${queryString ? `?${queryString}` : ''}`,
+          MIKAN_POLICY
+        );
+        const response = await httpClient.get(
+          upstreamUrl.href,
+          {
+            ...boundedAxiosOptions(MIKAN_POLICY, config),
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          }
+        );
+        if ((!Buffer.isBuffer(response.data) && typeof response.data !== 'string') ||
+            Buffer.byteLength(response.data) > config.http.maxXmlBytes) {
+          throw new Error('Upstream RSS response too large');
+        }
+        result = await new xml2js.Parser().parseStringPromise(response.data);
+        channel = result?.rss?.channel?.[0];
+        if (!channel) throw new Error('Invalid upstream RSS');
+      } catch {
+        status = 502;
+        return res.status(status).json({ error: 'Upstream RSS request failed', code: 'UPSTREAM_FAILURE' });
+      }
+
+      try {
+        const patterns = compilePatterns(database.getPatterns());
+        const counts = new Map();
+        const items = [];
+        for (const item of channel.item || []) {
+          const title = item.title?.[0];
+          if (typeof title !== 'string') continue;
+          const pubDate = item.torrent?.[0]?.pubDate?.[0] || item.pubDate?.[0];
+          const enclosure = item.enclosure?.[0]?.$;
+          const link = item.link?.[0];
+          for (const compiledPattern of patterns) {
+            const transformed = transformTitle(title, compiledPattern);
+            if (!transformed) continue;
+            const id = compiledPattern.pattern.id;
+            counts.set(id, (counts.get(id) || 0) + 1);
+            items.push({
+              title: [transformed],
+              pubDate: pubDate ? [pubDate] : undefined,
+              enclosure: enclosure ? [{ $: enclosure }] : undefined,
+              link,
+              guid: [{ $: { isPermaLink: 'true' }, _: link }]
+            });
+            break;
+          }
+        }
+        channel.item = items;
+        if (counts.size) database.incrementMatchCounts(counts);
+        return res.type('application/xml').send(new xml2js.Builder().buildObject(result));
+      } catch {
+        status = 500;
+        return res.status(status).json({ error: 'Internal server error', code: 'REQUEST_FAILED' });
+      }
+    } finally {
+      const message = `[RSS] route=/RSS status=${status} duration_ms=${Date.now() - startedAt}`;
+      (status >= 500 ? logger.error : logger.log)(message);
+    }
+  });
+  return router;
+}
+
+module.exports = { createRssRouter, compilePatterns, transformTitle };

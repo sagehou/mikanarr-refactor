@@ -1,14 +1,36 @@
- version: '3.8'
+services:
+  mikanarr:
+    image: ${IMAGE_NAME:-ghcr.io/sagehou/mikanarr-refactor:latest}
+    container_name: mikanarr
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 12306
+      TZ: Asia/Shanghai
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:12306:12306
+    volumes:
+      - mikanarr-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:12306/api/health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
- services:
-   mikanarr:
-     image: ${IMAGE_NAME:-mikanarr-refactor:latest}
-     container_name: mikanarr
-     restart: unless-stopped
-     ports:
-       - "12306:12306"
-     volumes:
-       - ./data:/app/data
-     environment:
-       - PORT=12306
-       - TZ=Asia/Shanghai
+volumes:
+  mikanarr-data:

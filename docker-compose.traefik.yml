@@ -1,0 +1,17 @@
+services:
+  mikanarr:
+    networks:
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_NETWORK:-traefik}"
+      traefik.http.routers.mikanarr.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.mikanarr.rule: "Host(`${MIKANARR_HOST:?set MIKANARR_HOST}`)"
+      traefik.http.routers.mikanarr.service: mikanarr
+      traefik.http.routers.mikanarr.tls: "true"
+      traefik.http.services.mikanarr.loadbalancer.server.port: "12306"
+
+networks:
+  traefik:
+    external: true
+    name: "${TRAEFIK_NETWORK:-traefik}"

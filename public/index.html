@@ -1,41 +1,46 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-bs-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#b07d62">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#a86f4c">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/images/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/images/icon.svg">
   <title>Mikanarr - Mikan to Sonarr Bridge</title>
-  <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet"
-        onerror="this.href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'">
-  <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.css" rel="stylesheet"
-        onerror="this.href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css'">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet"
+        integrity="sha384-CK2SzKma4jA5H/MXDUU7i1TqZlCFaD4T01vtyDFvPlD97JQyS+IsSh1nI2EFbpyk" crossorigin="anonymous">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <div id="app">
-    <div id="login-container" class="login-container d-none">
-      <div class="login-box">
-        <div class="text-center mb-4">
-          <h2><i class="bi bi-cloud-download"></i> Mikanarr</h2>
-          <p class="text-muted">Mikan to Sonarr Bridge</p>
+    <div id="login-container" class="login-container login-shell d-none">
+      <div class="login-ambient" aria-hidden="true"></div>
+      <div class="login-box login-panel">
+        <div class="login-brand mb-4">
+          <span class="login-mark" aria-hidden="true"><i class="bi bi-cloud-download"></i></span>
+          <div>
+            <p class="login-kicker">Mikan × Sonarr</p>
+            <h1 class="login-title">Mikanarr</h1>
+            <p class="login-subtitle">轻松管理你的动漫订阅自动化</p>
+          </div>
         </div>
         <form id="login-form">
           <div class="mb-3">
             <label for="username" class="form-label">用户名</label>
-            <input type="text" class="form-control" id="username" required>
+            <input type="text" class="form-control" id="username" autocomplete="username" required>
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">密码</label>
-            <input type="password" class="form-control" id="password" required>
+            <input type="password" class="form-control" id="password" autocomplete="current-password" required>
           </div>
-          <div id="login-error" class="alert alert-danger d-none"></div>
-          <button type="submit" class="btn btn-primary w-100">登录</button>
+          <div id="login-error" class="alert alert-danger d-none" role="alert" aria-live="assertive"></div>
+          <button type="submit" class="btn btn-primary login-submit w-100"><span>进入工作台</span><i class="bi bi-arrow-right-short" aria-hidden="true"></i></button>
           
           <div id="oidc-login-container" class="mt-3 d-none">
-            <hr>
+            <div class="login-divider"><span>或</span></div>
             <a href="/auth/oidc/login" class="btn btn-outline-primary w-100">
               <i class="bi bi-shield-lock"></i> 使用 SSO 登录
             </a>
@@ -44,13 +49,13 @@
       </div>
     </div>
 
-    <div id="main-container" class="d-none">
-      <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+    <div id="main-container" class="app-shell d-none">
+      <nav class="navbar navbar-expand-lg navbar-dark sticky-top app-navbar">
         <div class="container">
           <a class="navbar-brand" href="/">
             <i class="bi bi-cloud-download"></i> Mikanarr
           </a>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="切换导航">
             <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="navbarNav">
@@ -60,7 +65,7 @@
               </li>
             </ul>
             <div class="d-flex align-items-center gap-2">
-              <button class="btn btn-link text-white p-0" id="theme-toggle" title="切换主题">
+              <button class="btn btn-link p-0" id="theme-toggle" title="切换主题" aria-label="切换主题">
                 <i class="bi bi-moon-stars"></i>
               </button>
               <button class="btn btn-outline-light" id="logout-btn">
@@ -71,51 +76,44 @@
         </div>
       </nav>
 
-      <div class="container mt-4">
+      <main class="container app-content">
 <div id="pattern-list" class="pattern-list">
-          <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Patterns</h2>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-              <!-- 视图切换 -->
-              <div class="btn-group" role="group" aria-label="视图切换">
-                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图">
-                  <i class="bi bi-grid-3x3-gap"></i>
-                </button>
-                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图">
-                  <i class="bi bi-list"></i>
-                </button>
-              </div>
-              
-              <div class="input-group" style="width: auto;">
-                <span class="input-group-text"><i class="bi bi-funnel"></i></span>
-                <select class="form-select" id="filter-status" style="max-width: 150px;">
+          <header class="pattern-page-heading">
+            <div class="page-heading-copy"><p class="eyebrow">订阅规则</p><h1>Patterns</h1><p class="page-lead">集中管理匹配、映射与追更状态。</p></div>
+            <div class="pattern-summary" aria-label="Pattern 摘要">
+              <span class="pattern-summary-chip"><strong id="pattern-total-count" class="pattern-summary-value">0</strong>总数</span>
+              <span class="pattern-summary-chip pattern-summary-chip--warning"><strong id="pattern-issue-count" class="pattern-summary-value">0</strong>需关注</span>
+              <span class="pattern-summary-chip"><strong id="pattern-summary-selected" class="pattern-summary-value">0</strong>已选择</span>
+            </div>
+          </header>
+          <div id="workspace-notice" class="workspace-notice d-none" role="status" aria-live="polite"></div>
+          <div class="pattern-toolbar" aria-label="Pattern 工具栏">
+            <div class="pattern-toolbar-discovery">
+              <label class="search-control" for="search-input" aria-label="搜索 Patterns"><i class="bi bi-search" aria-hidden="true"></i><input type="search" class="form-control" id="search-input" placeholder="搜索系列、正则或字幕组"></label>
+              <label class="filter-control" for="filter-status">
+                <span>状态</span>
+                <select class="form-select" id="filter-status">
                   <option value="all">所有状态</option>
                   <option value="normal">正常</option>
                   <option value="case-mismatch">名称不一致</option>
                   <option value="not-found">未找到系列</option>
                 </select>
-              </div>
-              
-              <button class="btn btn-outline-warning d-none" id="batch-fix-btn">
-                <i class="bi bi-wrench"></i> 批量修复
-              </button>
-              <button class="btn btn-outline-danger d-none" id="batch-delete-btn">
-                <i class="bi bi-trash"></i> 批量删除 (<span id="selected-count">0</span>)
-              </button>
-              
-              <div class="vr mx-1"></div>
-              
-              <button class="btn btn-outline-secondary" id="export-btn" title="导出配置">
-                <i class="bi bi-download"></i>
-              </button>
-              <label class="btn btn-outline-primary" title="导入配置">
-                <i class="bi bi-upload"></i>
-                <input type="file" id="import-input" accept=".json" style="display: none;">
               </label>
-              <input type="text" class="form-control" id="search-input" placeholder="搜索..." style="max-width: 200px;">
-              <button class="btn btn-primary" id="new-pattern-btn">
-                <i class="bi bi-plus-lg"></i> 新建
-              </button>
+              <div class="btn-group view-toggle" role="group" aria-label="视图切换">
+                <button type="button" class="btn btn-outline-secondary active" id="view-card-btn" title="卡片视图" aria-label="卡片视图" aria-pressed="true"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></button>
+                <button type="button" class="btn btn-outline-secondary" id="view-table-btn" title="表格视图" aria-label="表格视图" aria-pressed="false"><i class="bi bi-list" aria-hidden="true"></i></button>
+              </div>
+            </div>
+            <div class="pattern-toolbar-actions">
+              <div id="batch-actions" class="batch-actions d-none">
+                <button class="btn btn-outline-warning" id="batch-fix-btn"><i class="bi bi-wrench" aria-hidden="true"></i>批量修复</button>
+                <button class="btn btn-outline-danger" id="batch-delete-btn"><i class="bi bi-trash" aria-hidden="true"></i>批量删除 (<span id="selected-count">0</span>)</button>
+              </div>
+              <span class="toolbar-divider" aria-hidden="true"></span>
+              <button class="btn btn-outline-secondary" id="export-btn" title="导出配置" aria-label="导出配置"><i class="bi bi-download" aria-hidden="true"></i></button>
+              <button class="btn btn-outline-primary" id="import-btn" type="button" title="导入配置" aria-label="导入配置"><i class="bi bi-upload" aria-hidden="true"></i></button>
+              <input type="file" id="import-input" accept=".json" hidden>
+              <button class="btn btn-primary" id="new-pattern-btn"><i class="bi bi-plus-lg" aria-hidden="true"></i>新建</button>
             </div>
           </div>
 
@@ -131,14 +129,14 @@
                 <table class="table table-hover">
 <thead>
                     <tr>
-                      <th><input type="checkbox" class="form-check-input" id="select-all"></th>
-                      <th class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="series">系列 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="season">季度 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="language">语言 <i class="bi bi-arrow-down-up"></i></th>
-                      <th class="sortable" data-sort="quality">质量 <i class="bi bi-arrow-down-up"></i></th>
+                      <th scope="col"><input type="checkbox" class="form-check-input" id="select-all" aria-label="选择全部 Patterns"></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="series">系列 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="season">季度 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="language">语言 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="quality">质量 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
                       <th>进度</th>
-                      <th class="sortable" data-sort="last_matched_at">最后匹配 <i class="bi bi-arrow-down-up"></i></th>
+                      <th scope="col"><button type="button" class="sortable" data-sort="last_matched_at">最后匹配 <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button></th>
                       <th>字幕组</th>
                       <th>操作</th>
                     </tr>
@@ -151,185 +149,187 @@
           </div>
         </div>
 
-        <div id="pattern-edit" class="pattern-edit d-none">
-          <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 id="edit-title">新建 Pattern</h2>
-            <button class="btn btn-outline-secondary" id="back-btn">
-              <i class="bi bi-arrow-left"></i> 返回
-            </button>
-          </div>
+        <div id="pattern-edit" class="pattern-edit view-panel d-none">
+          <header class="editor-heading">
+            <div class="page-heading-copy"><p class="eyebrow">Pattern 配置</p><h1 id="edit-title" tabindex="-1">新建 Pattern</h1><p class="page-lead">按步骤完成来源、匹配、映射与输出设置。</p></div>
+            <button class="btn btn-outline-secondary" id="back-btn"><i class="bi bi-arrow-left" aria-hidden="true"></i>返回</button>
+          </header>
 
-          <div class="row">
-            <div class="col-lg-8">
-              <div class="card mb-4">
-                <div class="card-body">
-                  <form id="pattern-form">
-                    <input type="hidden" id="pattern-id">
+          <div class="editor-grid">
+            <div class="editor-main">
+              <form id="pattern-form">
+                <input type="hidden" id="pattern-id">
 
-                    <div class="mb-3">
-                      <label class="form-label">快速导入</label>
+                <section class="editor-section" data-section="source" aria-labelledby="editor-source-title">
+                  <header class="editor-section-heading"><span class="editor-section-index">01</span><div><h2 id="editor-source-title">订阅来源</h2><p>导入 Mikan 链接并确认远程 RSS 来源。</p></div></header>
+                  <div class="mb-3">
+                    <label class="form-label">快速导入</label>
+                    <div class="input-group">
+                      <input type="text" class="form-control" id="mikan-import" placeholder="粘贴Mikan详情页URL或RSS URL (例如: https://mikanani.me/Home/Bangumi/3455)">
+                      <button class="btn btn-outline-primary" type="button" id="import-mikan-btn">
+                        <i class="bi bi-magic"></i> 解析
+                      </button>
+                    </div>
+                    <div class="form-text">支持RSS URL或番剧详情页URL，自动提取 bangumiId 和 subgroupid</div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="remote" class="form-label">Remote RSS URL</label>
+                    <div class="input-group">
+                      <input type="url" class="form-control" id="remote" placeholder="https://mikanani.me/RSS/MyBangumi?token=xxx">
+                      <button class="btn btn-outline-secondary" type="button" id="refresh-rss-btn" aria-label="刷新 RSS 预览">
+                        <i class="bi bi-arrow-clockwise"></i>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="editor-section" data-section="matching" aria-labelledby="editor-matching-title">
+                  <header class="editor-section-heading"><span class="editor-section-index">02</span><div><h2 id="editor-matching-title">匹配规则</h2><p>编写正则并在保存前验证匹配结果。</p></div></header>
+                  <div class="mb-3">
+                    <label for="pattern" class="form-label">Pattern (正则表达式)</label>
+                    <textarea class="form-control font-monospace" id="pattern" rows="3"
+                      placeholder="\[Lilith-Raws\] (?<series>.+) - (?<episode>\d+) ..." required></textarea>
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="escape-btn">
+                        <i class="bi bi-code-slash"></i> Escape
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="episode-btn">
+                        <i class="bi bi-hash"></i> Episode
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-success" id="test-pattern-btn">
+                        <i class="bi bi-play-circle"></i> 测试匹配
+                      </button>
+                    </div>
+                    <div id="pattern-test-result" class="mt-2 d-none">
+                      <div class="alert alert-info mb-0">
+                        <strong>匹配结果:</strong>
+                        <div id="pattern-test-output" class="mt-1 font-monospace small"></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="editor-section" data-section="mapping" aria-labelledby="editor-mapping-title">
+                  <header class="editor-section-heading"><span class="editor-section-index">03</span><div><h2 id="editor-mapping-title">Sonarr 映射</h2><p>选择目标系列与季度，并核对系列信息。</p></div></header>
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <label for="series" class="form-label">系列</label>
                       <div class="input-group">
-                        <input type="text" class="form-control" id="mikan-import" placeholder="粘贴Mikan详情页URL或RSS URL (例如: https://mikanani.me/Home/Bangumi/3455)">
-                        <button class="btn btn-outline-primary" type="button" id="import-mikan-btn">
-                          <i class="bi bi-magic"></i> 解析
+                        <select class="form-select" id="series" required>
+                          <option value="">选择系列...</option>
+                        </select>
+                        <button class="btn btn-outline-success" type="button" id="form-add-series-btn" title="在Sonarr中添加新剧集" aria-label="在 Sonarr 中添加新剧集">
+                          <i class="bi bi-plus-lg"></i>
                         </button>
                       </div>
-                      <div class="form-text">支持RSS URL或番剧详情页URL，自动提取 bangumiId 和 subgroupid</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                      <label for="remote" class="form-label">Remote RSS URL</label>
-                      <div class="input-group">
-                        <input type="url" class="form-control" id="remote" placeholder="https://mikanani.me/RSS/MyBangumi?token=xxx">
-                        <button class="btn btn-outline-secondary" type="button" id="refresh-rss-btn">
-                          <i class="bi bi-arrow-clockwise"></i>
-                        </button>
-                      </div>
-                      <div id="proxy-url-box" class="mt-2 d-none">
-                        <label class="form-label text-primary">Proxy URL:</label>
-                        <div class="input-group">
-                          <input type="text" class="form-control" id="proxy-url" readonly>
-                          <button class="btn btn-outline-primary" type="button" id="copy-proxy-btn">
-                            <i class="bi bi-clipboard"></i>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="mb-3">
-                      <label for="pattern" class="form-label">Pattern (正则表达式)</label>
-                      <textarea class="form-control font-monospace" id="pattern" rows="3" 
-                        placeholder="\[Lilith-Raws\] (?<series>.+) - (?<episode>\d+) ..." required></textarea>
-                      <div class="mt-2 d-flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="escape-btn">
-                          <i class="bi bi-code-slash"></i> Escape
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="episode-btn">
-                          <i class="bi bi-hash"></i> Episode
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-success" id="test-pattern-btn">
-                          <i class="bi bi-play-circle"></i> 测试匹配
-                        </button>
-                      </div>
-                      <div id="pattern-test-result" class="mt-2 d-none">
-                        <div class="alert alert-info mb-0">
-                          <strong>匹配结果:</strong>
-                          <div id="pattern-test-output" class="mt-1 font-monospace small"></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="row mb-3">
-                      <div class="col-md-6">
-                        <label for="series" class="form-label">系列</label>
-                        <div class="input-group">
-                          <select class="form-select" id="series" required>
-                            <option value="">选择系列...</option>
-                          </select>
-                          <button class="btn btn-outline-success" type="button" id="form-add-series-btn" title="在Sonarr中添加新剧集">
-                            <i class="bi bi-plus-lg"></i>
-                          </button>
-                        </div>
-                        <!-- Series Info Card -->
-                        <div id="series-info-card" class="series-info-card mt-2 d-none">
-                          <img id="series-poster" class="series-poster" src="" alt="Poster">
-                          <div class="series-info">
-                            <h6 id="series-title-zh"></h6>
-                            <div class="series-stats">
-                              <span class="series-stat downloaded" title="已下载">
-                                <i class="bi bi-check-circle-fill"></i> <span id="series-downloaded">0</span>
-                              </span>
-                              <span class="series-stat missing" title="缺失">
-                                <i class="bi bi-exclamation-circle-fill"></i> <span id="series-missing">0</span>
-                              </span>
-                              <span class="series-stat" title="总集数">
-                                <i class="bi bi-collection"></i> <span id="series-total">0</span> 集
-                              </span>
-                            </div>
-                            <div class="progress progress-thin mt-2">
-                              <div id="series-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
-                            </div>
-                            <div class="mt-2">
-                              <a id="series-sonarr-link" href="#" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-box-arrow-up-right"></i> 在Sonarr中打开
-                              </a>
-                            </div>
+                      <!-- Series Info Card -->
+                      <div id="series-info-card" class="series-info-card mt-2 d-none">
+                        <img id="series-poster" class="series-poster" src="" alt="Poster">
+                        <div class="series-info">
+                          <h6 id="series-title-zh"></h6>
+                          <div class="series-stats">
+                            <span class="series-stat downloaded" title="已下载">
+                              <i class="bi bi-check-circle-fill"></i> <span id="series-downloaded">0</span>
+                            </span>
+                            <span class="series-stat missing" title="缺失">
+                              <i class="bi bi-exclamation-circle-fill"></i> <span id="series-missing">0</span>
+                            </span>
+                            <span class="series-stat" title="总集数">
+                              <i class="bi bi-collection"></i> <span id="series-total">0</span> 集
+                            </span>
+                          </div>
+                          <div class="progress progress-thin mt-2">
+                            <div id="series-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                          </div>
+                          <div class="mt-2">
+                            <a id="series-sonarr-link" href="#" target="_blank" class="btn btn-sm btn-outline-primary">
+                              <i class="bi bi-box-arrow-up-right"></i> 在Sonarr中打开
+                            </a>
                           </div>
                         </div>
                       </div>
-                      <div class="col-md-6">
-                        <label for="season" class="form-label">季度</label>
-                        <select class="form-select" id="season" required>
-                          <option value="">选择季度...</option>
-                        </select>
-                      </div>
                     </div>
-
-                    <div class="row mb-3">
-                      <div class="col-md-4">
-                        <label for="language" class="form-label">语言</label>
-                        <input type="text" class="form-control" id="language" value="Chinese">
-                      </div>
-                      <div class="col-md-4">
-                        <label for="quality" class="form-label">质量</label>
-                        <input type="text" class="form-control" id="quality" value="WEBDL 1080p">
-                      </div>
-                      <div class="col-md-4">
-                        <label for="offset" class="form-label">偏移</label>
-                        <input type="number" class="form-control" id="offset" value="0">
-                      </div>
+                    <div class="col-md-6">
+                      <label for="season" class="form-label">季度</label>
+                      <select class="form-select" id="season" required>
+                        <option value="">选择季度...</option>
+                      </select>
                     </div>
-
-                    <div class="mb-3">
-                      <label for="releasegroup" class="form-label">字幕组</label>
-                      <input type="text" class="form-control" id="releasegroup" placeholder="Lilith-Raws">
-                    </div>
-
-                    <div class="d-flex gap-2">
-                      <button type="submit" class="btn btn-primary" id="save-btn">
-                        <i class="bi bi-check-lg"></i> 保存
-                      </button>
-                      <button type="button" class="btn btn-outline-secondary" id="cancel-btn">
-                        取消
-                      </button>
-                      <button type="button" class="btn btn-outline-danger d-none ms-auto" id="edit-delete-btn">
-                        <i class="bi bi-trash"></i> 删除
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-lg-4">
-              <div class="card sticky-top" style="top: 80px;">
-                <div class="card-header">
-                  <h6 class="mb-0"><i class="bi bi-rss"></i> RSS 预览</h6>
-                </div>
-                <div class="card-body">
-                  <div id="rss-preview" class="rss-preview">
-                    <p class="text-muted text-center">输入 RSS URL 加载预览</p>
                   </div>
+                </section>
+
+                <section class="editor-section" data-section="output" aria-labelledby="editor-output-title">
+                  <header class="editor-section-heading"><span class="editor-section-index">04</span><div><h2 id="editor-output-title">输出设置</h2><p>设置语言、质量、偏移、字幕组与生成的代理地址。</p></div></header>
+                  <div class="row mb-3">
+                    <div class="col-md-4">
+                      <label for="language" class="form-label">语言</label>
+                      <input type="text" class="form-control" id="language" value="Chinese">
+                    </div>
+                    <div class="col-md-4">
+                      <label for="quality" class="form-label">质量</label>
+                      <input type="text" class="form-control" id="quality" value="WEBDL 1080p">
+                    </div>
+                    <div class="col-md-4">
+                      <label for="offset" class="form-label">偏移</label>
+                      <input type="number" class="form-control" id="offset" value="0">
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="releasegroup" class="form-label">字幕组</label>
+                    <input type="text" class="form-control" id="releasegroup" placeholder="Lilith-Raws">
+                  </div>
+
+                  <div id="proxy-url-box" class="mt-2 d-none">
+                    <label class="form-label text-primary">Proxy URL:</label>
+                    <div class="input-group">
+                      <input type="text" class="form-control" id="proxy-url" readonly>
+                      <button class="btn btn-outline-primary" type="button" id="copy-proxy-btn" aria-label="复制代理 URL">
+                        <i class="bi bi-clipboard"></i>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <div class="editor-actions" role="group" aria-label="Pattern 编辑操作">
+                  <button type="submit" class="btn btn-primary" id="save-btn">
+                    <i class="bi bi-check-lg"></i> 保存
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" id="cancel-btn">
+                    取消
+                  </button>
+                  <button type="button" class="btn btn-outline-danger d-none ms-auto" id="edit-delete-btn">
+                    <i class="bi bi-trash"></i> 删除
+                  </button>
                 </div>
-              </div>
+              </form>
             </div>
+
+            <aside class="editor-preview-panel" aria-label="RSS 预览">
+              <div class="card editor-preview-card">
+                <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-rss" aria-hidden="true"></i> RSS 预览</h2></div>
+                <div class="card-body"><div id="rss-preview" class="rss-preview"><p class="text-muted text-center">输入 RSS URL 加载预览</p></div></div>
+              </div>
+            </aside>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   </div>
 
   <!-- Add Series Modal -->
-  <div class="modal fade" id="add-series-modal" tabindex="-1">
+  <div class="modal fade" id="add-series-modal" tabindex="-1" aria-labelledby="add-series-modal-title">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">添加到 Sonarr</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <h5 class="modal-title" id="add-series-modal-title">添加到 Sonarr</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
           <!-- Step 1: Search -->
           <div id="add-series-step-1">
+            <label class="visually-hidden" for="sonarr-search-input">搜索剧集</label>
             <div class="input-group mb-3">
               <input type="text" class="form-control" id="sonarr-search-input" placeholder="输入剧集名称搜索...">
               <button class="btn btn-primary" id="sonarr-search-btn">搜索</button>
@@ -344,16 +344,16 @@
               <input type="hidden" id="selected-tvdb-id">
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label">根目录</label>
+                  <label class="form-label" for="sonarr-root-folder">根目录</label>
                   <select class="form-select" id="sonarr-root-folder" required></select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">质量配置</label>
+                  <label class="form-label" for="sonarr-quality-profile">质量配置</label>
                   <select class="form-select" id="sonarr-quality-profile" required></select>
                 </div>
                 <!-- Language Profile Removed -->
                 <div class="col-md-6">
-                  <label class="form-label">剧集类型</label>
+                  <label class="form-label" for="sonarr-series-type">剧集类型</label>
                   <select class="form-select" id="sonarr-series-type">
                     <option value="anime" selected>Anime (动漫)</option>
                     <option value="standard">Standard (标准)</option>
@@ -361,7 +361,7 @@
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">监控选项</label>
+                  <label class="form-label" for="sonarr-monitor">监控选项</label>
                   <select class="form-select" id="sonarr-monitor">
                     <option value="all" selected>所有剧集</option>
                     <option value="future">仅未来剧集</option>
@@ -389,15 +389,10 @@
     </div>
   </div>
 
-  <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"
-          onerror="this.src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/api.js"></script>
   <script src="/js/app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then(() => console.log('Service Worker Registered'))
-        .catch(err => console.error('Service Worker Registration Failed', err));
-    }
-  </script>
 </body>
 </html>
