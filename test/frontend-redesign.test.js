@@ -74,7 +74,7 @@ function pattern(id) {
     id,
     series: `Series ${id}`,
     season: '01',
-    pattern: '(?<episode>\\d+)',
+    pattern: '.*(?:第|Episode|-)\\s*(?<episode>\\d+).*',
     language: 'Chinese',
     quality: 'WEBDL 1080p',
     offset: 0,
@@ -171,6 +171,35 @@ test('card selection reveals the integrated bulk toolbar and selected styling', 
   app.clearBatchSelection();
   assert.equal(document.getElementById('batch-actions').classList.contains('d-none'), true);
   assert.equal(document.querySelectorAll('.pattern-card.is-selected').length, 0);
+
+  cleanup();
+});
+
+test('editing keeps the library visible and adds context plus extracted episode results', async () => {
+  const { dom, app, cleanup } = await installRedesignDom();
+  const document = dom.window.document;
+  const selected = pattern(1);
+  app.seriesList = [{ title: selected.series, seasons: [] }];
+  app.currentPatternId = selected.id;
+
+  app.showPatternEdit(selected);
+  assert.equal(document.getElementById('pattern-list').classList.contains('d-none'), false);
+  assert.equal(document.getElementById('pattern-edit').classList.contains('d-none'), false);
+  assert.equal(document.body.classList.contains('ui-drawer-open'), true);
+  assert.equal(document.querySelector('.ui-editor-context').classList.contains('d-none'), false);
+  assert.equal(document.querySelector('.ui-editor-context-title').textContent, selected.series);
+  assert.equal(document.querySelector('.ui-editor-tab.active').textContent, '匹配规则');
+
+  app.rssItems = [
+    '[DMHY] Example - 03 [1080P]',
+    'Example 第 04 话',
+    'Example - Episode 05 [WEBRip]'
+  ];
+  app.renderRssPreview();
+  assert.deepEqual(
+    Array.from(document.querySelectorAll('.ui-rss-result-badge'), node => node.textContent),
+    ['E03', 'E04', 'E05']
+  );
 
   cleanup();
 });
