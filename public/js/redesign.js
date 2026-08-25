@@ -233,7 +233,7 @@
         button.addEventListener('click', () => {
           app.uiCurrentPage = page;
           app.renderCurrentView(app.uiVisiblePatterns || []);
-          document.getElementById('pattern-card-view')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          document.getElementById('pattern-card-view')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
         });
       }
       return button;
