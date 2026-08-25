@@ -1,4 +1,5 @@
 name: UI visual QA
+# visual iteration: refined desktop drawer
 
 on:
   push:
@@ -131,7 +132,7 @@ jobs:
               id: index + 1,
               series: name,
               season: '01',
-              pattern: '(?<episode>\\d+)',
+              pattern: '.*(?:第|Episode|-)\\s*(?<episode>\\d+).*',
               language: 'Chinese',
               quality: 'WEBDL 1080p',
               offset: 0,
