@@ -54,7 +54,7 @@ jobs:
         env:
           CHROME_PATH: /usr/bin/google-chrome
         run: |
-          cat > /tmp/ui-qa.mjs <<'JS'
+          cat > .ui-qa.mjs <<'JS'
           import { chromium } from 'playwright-core';
           import fs from 'node:fs';
 
@@ -188,7 +188,8 @@ jobs:
 
           await browser.close();
           JS
-          node /tmp/ui-qa.mjs
+          node .ui-qa.mjs
+          rm .ui-qa.mjs
 
       - uses: actions/upload-artifact@v4
         with:
