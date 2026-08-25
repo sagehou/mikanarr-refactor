@@ -1,0 +1,111 @@
+name: Temporary migrate proxy v4
+
+on:
+  push:
+    branches:
+      - refactor/http-proxy-middleware-v4
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v7
+        with:
+          ref: refactor/http-proxy-middleware-v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Use the project npm version
+        run: npm install --global --ignore-scripts npm@11.18.0 && test "$(npm --version)" = "11.18.0"
+
+      - name: Apply migration edits
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old!r}')
+              file.write_text(text.replace(old, new, 1))
+
+          manifest_path = Path('package.json')
+          manifest = json.loads(manifest_path.read_text())
+          manifest['engines']['node'] = '>=22.22.2 <23 || >=24.15.0 <25'
+          manifest['dependencies']['http-proxy-middleware'] = '^4.2.0'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+
+          replace_once(
+              'README.md',
+              '>=22.13.0 <23 || >=24.0.0 <25',
+              '>=22.22.2 <23 || >=24.15.0 <25'
+          )
+
+          replace_once(
+              'test/container-config.test.js',
+              "  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [3, 0, 7], [4, 0, 0]);",
+              "  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [4, 2, 0], [5, 0, 0]);"
+          )
+          replace_once(
+              'test/container-config.test.js',
+              "  const manifest = JSON.parse(read('package.json'));\n\n",
+              "  const manifest = JSON.parse(read('package.json'));\n  assert.equal(manifest.engines.node, '>=22.22.2 <23 || >=24.15.0 <25');\n\n"
+          )
+          replace_once(
+              'test/container-config.test.js',
+              "  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [4, 2, 0], [5, 0, 0]);\n",
+              "  assertVersionRange(manifest.dependencies['http-proxy-middleware'], [4, 2, 0], [5, 0, 0]);\n  const sonarrRoute = read('server/routes/sonarr.js');\n  assert.doesNotMatch(sonarrRoute, /require\\(['\\\"]http-proxy-middleware['\\\"]\\)/);\n  assert.match(sonarrRoute, /import\\(['\\\"]http-proxy-middleware['\\\"]\\)/);\n"
+          )
+
+          replace_once(
+              'server/routes/sonarr.js',
+              "const express = require('express');\nconst { createProxyMiddleware } = require('http-proxy-middleware');\n",
+              "const express = require('express');\n\nfunction createLazyProxyMiddleware(options) {\n  let middlewarePromise;\n  return async function lazyProxyMiddleware(req, res, next) {\n    try {\n      if (!middlewarePromise) {\n        middlewarePromise = import('http-proxy-middleware')\n          .then(({ createProxyMiddleware }) => createProxyMiddleware(options));\n      }\n      const middleware = await middlewarePromise;\n      return middleware(req, res, next);\n    } catch (error) {\n      return next(error);\n    }\n  };\n}\n"
+          )
+          replace_once(
+              'server/routes/sonarr.js',
+              'function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddleware = createProxyMiddleware }) {',
+              'function createSonarrRouter({ config, verifyToken, logger = console, proxyMiddleware }) {'
+          )
+          replace_once(
+              'server/routes/sonarr.js',
+              "  router.use('/', proxyMiddleware({\n",
+              '  const proxyOptions = {\n'
+          )
+          replace_once(
+              'server/routes/sonarr.js',
+              "    }\n  }));\n  return router;\n",
+              "    }\n  };\n  const middleware = proxyMiddleware\n    ? proxyMiddleware(proxyOptions)\n    : createLazyProxyMiddleware(proxyOptions);\n  router.use('/', middleware);\n  return router;\n"
+          )
+
+          replace_once(
+              'test/sonarr.test.js',
+              'Sonarr proxy wires production TLS verification through the v3 event API',
+              'Sonarr proxy wires production TLS verification through the proxy event API'
+          )
+          PY
+
+      - name: Sync package lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/migrate-proxy-v4.yml
+          git add package.json package-lock.json README.md server/routes/sonarr.js test/container-config.test.js test/sonarr.test.js
+          git commit -m "refactor: migrate Sonarr proxy to http-proxy-middleware v4"
+          git push origin HEAD:refactor/http-proxy-middleware-v4
