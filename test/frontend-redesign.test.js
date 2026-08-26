@@ -121,6 +121,14 @@ test('redesign turns the Pattern workspace into localized subscription managemen
   assert.equal(document.querySelector('label[for="pattern"]').textContent, '集数匹配规则');
   assert.ok(document.querySelector('.ui-pattern-help'));
   assert.match(document.querySelector('.editor-preview-card .card-header').textContent, /实时预览/);
+  assert.ok(document.getElementById('ui-preview-refresh-btn'));
+  assert.ok(document.querySelector('.ui-preview-source-value'));
+
+  const tuning = document.getElementById('ui-density-preview-tuning');
+  assert.ok(tuning);
+  assert.match(tuning.textContent, /repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(tuning.textContent, /ui-drawer-open[\s\S]*repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(tuning.textContent, /pattern-card-grid\.d-none/);
 
   cleanup();
 });
@@ -151,6 +159,25 @@ test('card workspace pages subscriptions instead of rendering the full library a
   cleanup();
 });
 
+test('table view hides the card grid instead of stacking both views', async () => {
+  const { dom, app, cleanup } = await installRedesignDom();
+  const document = dom.window.document;
+  const patterns = [pattern(1), pattern(2)];
+  app.allPatterns = patterns;
+  app.filteredPatterns = patterns;
+  app.renderCurrentView(patterns);
+
+  app.switchView('table');
+
+  const cardView = document.getElementById('pattern-card-view');
+  const tableView = document.getElementById('pattern-table-view');
+  assert.equal(cardView.classList.contains('d-none'), true);
+  assert.equal(tableView.classList.contains('d-none'), false);
+  assert.equal(dom.window.getComputedStyle(cardView).display, 'none');
+
+  cleanup();
+});
+
 test('card selection reveals the integrated bulk toolbar and selected styling', async () => {
   const { dom, app, cleanup } = await installRedesignDom();
   const document = dom.window.document;
@@ -175,12 +202,42 @@ test('card selection reveals the integrated bulk toolbar and selected styling', 
   cleanup();
 });
 
+test('matching tab owns RSS refresh and auto-loads the current Remote RSS source', async () => {
+  const { dom, app, cleanup } = await installRedesignDom();
+  const document = dom.window.document;
+  const remote = 'https://mikanani.me/RSS/Bangumi?bangumiId=42';
+  document.getElementById('remote').value = remote;
+  app.uiPreviewRemote = null;
+
+  let loads = 0;
+  app.loadRssPreview = async () => {
+    loads += 1;
+    app.uiPreviewRemote = remote;
+    app.rssItems = ['Example - 03'];
+    app.renderRssPreview();
+  };
+
+  document.querySelector('.ui-editor-tab[data-section="matching"]').click();
+  await Promise.resolve();
+
+  assert.equal(loads, 1);
+  assert.equal(document.querySelector('.ui-preview-source-value').textContent, remote);
+  assert.equal(document.getElementById('ui-preview-refresh-btn').disabled, false);
+
+  document.getElementById('ui-preview-refresh-btn').click();
+  await Promise.resolve();
+  assert.equal(loads, 2);
+
+  cleanup();
+});
+
 test('editing keeps the library visible and adds context plus extracted episode results', async () => {
   const { dom, app, cleanup } = await installRedesignDom();
   const document = dom.window.document;
   const selected = pattern(1);
   app.seriesList = [{ title: selected.series, seasons: [] }];
   app.currentPatternId = selected.id;
+  app.loadRssPreview = async () => {};
 
   app.showPatternEdit(selected);
   assert.equal(document.getElementById('pattern-list').classList.contains('d-none'), false);
