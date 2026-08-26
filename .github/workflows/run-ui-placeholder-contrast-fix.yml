@@ -1,0 +1,32 @@
+name: Apply input contrast polish
+
+on:
+  push:
+    branches:
+      - feat/ui-subscription-dashboard
+    paths:
+      - scripts/fix-ui-placeholder-contrast.js
+      - .github/workflows/run-ui-placeholder-contrast-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ui-subscription-dashboard
+          fetch-depth: 0
+      - name: Apply contrast fix
+        run: node scripts/fix-ui-placeholder-contrast.js
+      - name: Remove temporary helpers
+        run: rm -f scripts/fix-ui-placeholder-contrast.js .github/workflows/run-ui-placeholder-contrast-fix.yml
+      - name: Commit contrast fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(ui): strengthen form placeholder contrast"
+          git push origin HEAD:feat/ui-subscription-dashboard
