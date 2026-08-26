@@ -1369,14 +1369,14 @@ body.ui-drawer-open {
   --ui-field-bg: #fbfcfd;
   --ui-field-border: #c5d0d8;
   --ui-field-border-hover: #aebbc5;
-  --ui-placeholder: #8996a0;
+  --ui-placeholder: #758590;
 }
 
 [data-theme="dark"] {
   --ui-field-bg: #202a31;
   --ui-field-border: #4a5963;
   --ui-field-border-hover: #60717c;
-  --ui-placeholder: #8f9ca5;
+  --ui-placeholder: #a8b4bc;
 }
 
 .view-toggle .btn,
