@@ -18,7 +18,15 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH,
 const page = await browser.newPage({ viewport: { width: 1672, height: 941 } });
 await page.emulateMedia({ reducedMotion: 'no-preference' });
 const errors = [];
-page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+const pageErrors = [];
+const networkWarnings = [];
+page.on('console', m => {
+  if (m.type() !== 'error') return;
+  const text = m.text();
+  if (text.startsWith('Failed to load resource:')) networkWarnings.push(text);
+  else errors.push(text);
+});
+page.on('pageerror', error => pageErrors.push(error.message));
 await page.goto('http://127.0.0.1:12306/', { waitUntil: 'networkidle' });
 console.log('REDUCED_MOTION=' + await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
 await page.fill('#username', 'qa-admin');
@@ -101,6 +109,8 @@ assert.equal(await page.locator('#pattern-edit').evaluate(el=>el.classList.conta
 await page.setViewportSize({width:390,height:844});
 await page.waitForTimeout(100);
 await page.screenshot({ path:'/tmp/ui-polish-render/mobile.png' });
-fs.writeFileSync('/tmp/ui-polish-render/metrics.json', JSON.stringify({listMetrics,drawerMetrics,errors},null,2));
+fs.writeFileSync('/tmp/ui-polish-render/metrics.json', JSON.stringify({listMetrics,drawerMetrics,errors,pageErrors,networkWarnings},null,2));
+console.log('NETWORK_WARNINGS=' + JSON.stringify(networkWarnings));
 assert.equal(errors.length,0,errors.join(' | '));
+assert.equal(pageErrors.length,0,pageErrors.join(' | '));
 await browser.close();
