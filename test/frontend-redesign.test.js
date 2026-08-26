@@ -116,7 +116,7 @@ test('redesign turns the Pattern workspace into localized subscription managemen
 
   assert.deepEqual(
     Array.from(document.querySelectorAll('.ui-editor-tab'), node => node.textContent),
-    ['基础', '匹配规则', 'Sonarr', '高级']
+    ['订阅设置', '匹配规则']
   );
   assert.equal(document.querySelector('label[for="pattern"]').textContent, '集数匹配规则');
   assert.ok(document.querySelector('.ui-pattern-help'));
