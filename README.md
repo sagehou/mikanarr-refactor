@@ -4,8 +4,19 @@ Mikanarr - Mikan Anime to Sonarr Bridge（重构版）
 
 将 Mikan RSS 转换为 Sonarr 可识别的 RSS，并通过 Web 界面管理番剧匹配规则、Sonarr 剧集信息与 TMDB 元数据。
 
-![List View](docs/screenshots/list_view.png)
-![Edit View](docs/screenshots/edit_view.png)
+## 界面预览
+
+### 订阅管理
+
+![订阅管理 - 浅色模式](docs/screenshots/dashboard-light.webp)
+
+### 匹配规则编辑
+
+![匹配规则编辑 - 浅色模式](docs/screenshots/editor-light.webp)
+
+### 深色模式
+
+![订阅管理 - 深色模式](docs/screenshots/dashboard-dark.webp)
 
 ## 功能特性
 
@@ -23,7 +34,7 @@ Mikanarr - Mikan Anime to Sonarr Bridge（重构版）
   - **批量管理**：支持批量删除、批量修复系列名
   - **实时预览**：编辑正则表达式时实时预览匹配结果
 - ✅ **现代化界面**
-  - 美拉德（Maillard）配色风格及深色模式
+  - 低饱和蓝灰配色及深色模式
   - **PWA 支持**：可安装到桌面或手机主屏幕
   - **响应式卡片视图**：适配桌面和移动端
   - 显示 TMDB / Sonarr 海报、Sonarr 下载进度和缺失集数
