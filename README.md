@@ -8,15 +8,15 @@ Mikanarr - Mikan Anime to Sonarr Bridge（重构版）
 
 ### 订阅管理
 
-![订阅管理 - 浅色模式](docs/screenshots/dashboard-light.webp)
+![订阅管理 - 浅色模式](https://github.com/user-attachments/assets/8e2bc64b-184d-48e1-8b7b-12ac661da522)
 
 ### 匹配规则编辑
 
-![匹配规则编辑 - 浅色模式](docs/screenshots/editor-light.webp)
+![匹配规则编辑 - 浅色模式](https://github.com/user-attachments/assets/d585d541-fb8a-4f3b-ba14-a8b8574d803a)
 
 ### 深色模式
 
-![订阅管理 - 深色模式](docs/screenshots/dashboard-dark.webp)
+![订阅管理 - 深色模式](https://github.com/user-attachments/assets/f8224ea7-ff3b-4ed2-9f3a-6856095958a0)
 
 ## 功能特性
 
