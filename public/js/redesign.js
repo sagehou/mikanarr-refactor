@@ -495,15 +495,26 @@
     const title = document.getElementById('edit-title');
     if (title) title.textContent = pattern ? '编辑订阅' : '新建订阅';
     const edit = document.getElementById('pattern-edit');
-    edit?.classList.remove('is-open');
     edit?.setAttribute('aria-hidden', 'false');
-    if (this.uiDrawerOpenFrame) window.cancelAnimationFrame(this.uiDrawerOpenFrame);
-    this.uiDrawerOpenFrame = window.requestAnimationFrame(() => {
-      this.uiDrawerOpenFrame = window.requestAnimationFrame(() => {
-        this.uiDrawerOpenFrame = null;
-        edit?.classList.add('is-open');
-      });
-    });
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (edit) {
+      edit.getAnimations?.().forEach(animation => animation.cancel());
+      edit.classList.add('is-open');
+      if (!reducedMotion && typeof edit.animate === 'function') {
+        const animation = edit.animate(
+          [
+            { transform: 'translateX(100%)', opacity: 0.96 },
+            { transform: 'translateX(0)', opacity: 1 }
+          ],
+          { duration: 260, easing: 'cubic-bezier(.2, .72, .22, 1)', fill: 'both' }
+        );
+        this.uiDrawerAnimation = animation;
+        animation.finished.then(() => {
+          if (this.uiDrawerAnimation === animation) this.uiDrawerAnimation = null;
+          animation.cancel();
+        }).catch(() => {});
+      }
+    }
     applyEditorTab(pattern ? 'matching' : 'settings');
     return result;
   };
@@ -516,11 +527,10 @@
     const returnFocus = this.viewReturnFocus;
 
     document.body.classList.remove('ui-drawer-open');
-    if (this.uiDrawerOpenFrame) {
-      window.cancelAnimationFrame(this.uiDrawerOpenFrame);
-      this.uiDrawerOpenFrame = null;
+    if (this.uiDrawerAnimation) {
+      this.uiDrawerAnimation.cancel();
+      this.uiDrawerAnimation = null;
     }
-    edit?.classList.remove('is-open');
     edit?.setAttribute('aria-hidden', 'true');
     this.currentPatternId = null;
     this.updatePageTitle('Patterns');
@@ -534,12 +544,26 @@
       else document.getElementById('search-input')?.focus({ preventScroll: true });
     };
 
-    if (!edit || reducedMotion) {
+    if (!edit || reducedMotion || typeof edit.animate !== 'function') {
+      edit?.classList.remove('is-open');
       finish();
       return;
     }
 
-    window.setTimeout(finish, 250);
+    const closingAnimation = edit.animate(
+      [
+        { transform: 'translateX(0)', opacity: 1 },
+        { transform: 'translateX(100%)', opacity: 0.96 }
+      ],
+      { duration: 220, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'both' }
+    );
+    this.uiDrawerAnimation = closingAnimation;
+    closingAnimation.finished.then(() => {
+      if (this.uiDrawerAnimation === closingAnimation) this.uiDrawerAnimation = null;
+      closingAnimation.cancel();
+      edit.classList.remove('is-open');
+      finish();
+    }).catch(() => {});
   };
 
   const originalCreatePatternCard = proto.createPatternCard;
