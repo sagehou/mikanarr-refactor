@@ -1,5 +1,5 @@
 name: Rendered UI polish QA
-# recheck: browser animation API
+# recheck: final contrast and motion
 
 on:
   push:
