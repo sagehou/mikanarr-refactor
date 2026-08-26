@@ -1,0 +1,236 @@
+name: UI polish visual QA
+
+on:
+  push:
+    branches:
+      - feat/ui-subscription-dashboard
+    paths:
+      - .github/workflows/ui-polish-visual-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  visual-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ui-subscription-dashboard
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install app and browser driver
+        run: |
+          npm install --global --ignore-scripts npm@11.18.0
+          npm ci
+          npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.55.0
+          command -v google-chrome
+
+      - name: Start isolated Mikanarr
+        env:
+          NODE_ENV: development
+          ADMIN_USERNAME: qa-admin
+          ADMIN_PASSWORD: qa-only-password
+          COOKIE_SECURE: 'false'
+          DATA_DIR: /tmp/mikanarr-ui-polish-data
+          PORT: '12306'
+        run: |
+          node server/index.js > /tmp/mikanarr-ui-polish.log 2>&1 &
+          echo $! > /tmp/mikanarr-ui-polish.pid
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:12306/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/mikanarr-ui-polish.log
+          exit 1
+
+      - name: Validate layout motion and contrast
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          cat > .ui-polish-qa.mjs <<'JS'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import { chromium } from 'playwright-core';
+
+          const browser = await chromium.launch({
+            executablePath: process.env.CHROME_PATH,
+            headless: true,
+            args: ['--no-sandbox']
+          });
+          const page = await browser.newPage({ viewport: { width: 1672, height: 941 }, deviceScaleFactor: 1 });
+          const consoleErrors = [];
+          page.on('console', message => {
+            if (message.type() === 'error') consoleErrors.push(message.text());
+          });
+
+          await page.goto('http://127.0.0.1:12306/', { waitUntil: 'networkidle' });
+          await page.waitForSelector('#login-container:not(.d-none)');
+          await page.fill('#username', 'qa-admin');
+          await page.fill('#password', 'qa-only-password');
+          await page.click('#login-form button[type="submit"]');
+          await page.waitForSelector('#main-container:not(.d-none)');
+
+          await page.evaluate(() => {
+            const app = window.mikanarrApp;
+            const season = (total, downloaded) => ({
+              seasonNumber: 1,
+              monitored: true,
+              statistics: {
+                episodeCount: total,
+                episodeFileCount: downloaded,
+                totalEpisodeCount: total,
+                percentOfEpisodes: total ? Math.round((downloaded / total) * 100) : 0
+              }
+            });
+            const series = (title, total, downloaded) => ({
+              title,
+              titleSlug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              seasons: [season(total, downloaded)],
+              images: []
+            });
+            app.seriesLoadError = null;
+            app.sonarrHost = 'http://sonarr.local';
+            app.seriesList = [
+              series('葬送的芙莉莲', 28, 28),
+              series('进击的巨人 最终季', 16, 16),
+              series('Mushoku Tensei S2', 24, 21),
+              series('间谍过家家 第二季', 12, 12),
+              series('Re:Zero S3', 16, 11),
+              series('药屋少女的呢喃', 24, 24)
+            ];
+            const names = [
+              '葬送的芙莉莲', '进击的巨人 最终季', 'mushoku tensei s2',
+              '间谍过家家 第二季', '孤独摇滚！', 'Re:Zero S3',
+              '药屋少女的呢喃', '胆大党', '迷宫饭', '我推的孩子 第二季'
+            ];
+            const patterns = names.map((name, index) => ({
+              id: index + 1,
+              series: name,
+              season: '01',
+              pattern: '.* - (?<episode>\\d+)(?:\\D.*)?',
+              language: 'Chinese',
+              quality: 'WEBDL 1080p',
+              offset: 0,
+              releasegroup: index % 2 ? 'Nyaa' : 'DMHY 动漫花园',
+              remote: `https://mikanani.me/RSS/Bangumi?bangumiId=${3300 + index}`,
+              last_matched_at: new Date(Date.now() - index * 3600000).toISOString(),
+              match_count: 8 + index
+            }));
+            app.currentView = 'card';
+            app.allPatterns = patterns;
+            app.filteredPatterns = patterns;
+            app.uiCurrentPage = 1;
+            document.getElementById('pattern-card-view').classList.remove('d-none');
+            document.getElementById('pattern-table-view').classList.add('d-none');
+            app.renderCurrentView(patterns);
+            app.updatePatternSummary();
+          });
+
+          await page.waitForTimeout(100);
+          fs.mkdirSync('/tmp/ui-polish-qa', { recursive: true });
+          await page.screenshot({ path: '/tmp/ui-polish-qa/dashboard.png', fullPage: false });
+
+          const closedMetrics = await page.evaluate(() => {
+            const card = document.querySelector('.pattern-card');
+            const actionRects = Array.from(card.querySelectorAll('.pattern-card-actions .btn')).map(button => {
+              const rect = button.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            });
+            const title = card.querySelector('.pattern-card-title').getBoundingClientRect();
+            const badge = card.querySelector('.pattern-card-status-badge').getBoundingClientRect();
+            const badgeStyle = getComputedStyle(card.querySelector('.pattern-card-status-badge'));
+            const toolbarRects = ['export-btn', 'import-btn', 'new-pattern-btn'].map(id => {
+              const rect = document.getElementById(id).getBoundingClientRect();
+              return { id, y: rect.y, height: rect.height };
+            });
+            return {
+              actionRects,
+              titleCenter: title.y + title.height / 2,
+              badgeCenter: badge.y + badge.height / 2,
+              badgePosition: badgeStyle.position,
+              toolbarRects
+            };
+          });
+
+          assert.ok(closedMetrics.actionRects.length >= 3, 'expected card action buttons');
+          const firstAction = closedMetrics.actionRects[0];
+          closedMetrics.actionRects.forEach(rect => {
+            assert.ok(Math.abs(rect.y - firstAction.y) <= 1, 'card actions must share one baseline');
+            assert.ok(Math.abs(rect.width - 32) <= 1 && Math.abs(rect.height - 32) <= 1, 'card actions must be 32x32');
+          });
+          assert.equal(closedMetrics.badgePosition, 'static');
+          assert.ok(Math.abs(closedMetrics.titleCenter - closedMetrics.badgeCenter) <= 4, 'status badge must align with title');
+          const firstToolbar = closedMetrics.toolbarRects[0];
+          closedMetrics.toolbarRects.forEach(rect => {
+            assert.ok(Math.abs(rect.y - firstToolbar.y) <= 1, 'toolbar buttons must share one baseline');
+            assert.ok(Math.abs(rect.height - 40) <= 1, 'toolbar buttons must be 40px tall');
+          });
+
+          await page.evaluate(() => {
+            const app = window.mikanarrApp;
+            app.currentPatternId = app.allPatterns[0].id;
+            app.showPatternEdit(app.allPatterns[0]);
+          });
+          await page.waitForTimeout(70);
+          const midX = (await page.locator('#pattern-edit').boundingBox()).x;
+          await page.waitForTimeout(190);
+          const endBox = await page.locator('#pattern-edit').boundingBox();
+          assert.ok(midX > endBox.x + 8, `drawer should still be moving at 70ms: mid=${midX}, end=${endBox.x}`);
+
+          const openMetrics = await page.evaluate(() => {
+            const tabs = Array.from(document.querySelectorAll('.ui-editor-tab'), node => node.textContent.trim());
+            const field = document.getElementById('pattern');
+            const style = getComputedStyle(field);
+            const gridColumns = getComputedStyle(document.getElementById('pattern-card-view')).gridTemplateColumns.split(' ').filter(Boolean).length;
+            return {
+              tabs,
+              fieldBackground: style.backgroundColor,
+              fieldBorder: style.borderTopColor,
+              fieldColor: style.color,
+              fieldTransition: getComputedStyle(document.getElementById('pattern-edit')).transitionDuration,
+              gridColumns
+            };
+          });
+          assert.deepEqual(openMetrics.tabs, ['订阅设置', '匹配规则']);
+          assert.notEqual(openMetrics.fieldBackground, openMetrics.fieldBorder);
+          assert.notEqual(openMetrics.fieldBackground, openMetrics.fieldColor);
+          assert.notEqual(openMetrics.fieldTransition, '0s');
+          assert.equal(openMetrics.gridColumns, 2);
+
+          await page.screenshot({ path: '/tmp/ui-polish-qa/drawer-open.png', fullPage: false });
+
+          await page.evaluate(() => window.mikanarrApp.showPatternList());
+          await page.waitForTimeout(80);
+          const closingState = await page.evaluate(() => ({
+            hidden: document.getElementById('pattern-edit').classList.contains('d-none'),
+            open: document.getElementById('pattern-edit').classList.contains('is-open')
+          }));
+          assert.equal(closingState.hidden, false, 'drawer must remain mounted during closing animation');
+          assert.equal(closingState.open, false);
+          await page.waitForTimeout(180);
+          assert.equal(await page.locator('#pattern-edit').evaluate(node => node.classList.contains('d-none')), true);
+
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.waitForTimeout(100);
+          await page.screenshot({ path: '/tmp/ui-polish-qa/mobile.png', fullPage: false });
+
+          const report = { closedMetrics, openMetrics, consoleErrors };
+          fs.writeFileSync('/tmp/ui-polish-qa/metrics.json', JSON.stringify(report, null, 2));
+          assert.equal(consoleErrors.length, 0, `browser console errors: ${consoleErrors.join(' | ')}`);
+          await browser.close();
+          JS
+          node .ui-polish-qa.mjs
+          rm .ui-polish-qa.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-polish-visual-qa
+          path: /tmp/ui-polish-qa/*
+          if-no-files-found: error
