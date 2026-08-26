@@ -141,14 +141,30 @@ jobs:
             const card = document.querySelector('.pattern-card');
             const actionRects = Array.from(card.querySelectorAll('.pattern-card-actions .btn')).map(button => {
               const rect = button.getBoundingClientRect();
-              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+              const style = getComputedStyle(button);
+              return {
+                tag: button.tagName,
+                className: button.className,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                boxSizing: style.boxSizing,
+                paddingLeft: style.paddingLeft,
+                paddingRight: style.paddingRight,
+                borderLeft: style.borderLeftWidth,
+                borderRight: style.borderRightWidth,
+                flex: style.flex
+              };
             });
             const title = card.querySelector('.pattern-card-title').getBoundingClientRect();
             const badge = card.querySelector('.pattern-card-status-badge').getBoundingClientRect();
             const badgeStyle = getComputedStyle(card.querySelector('.pattern-card-status-badge'));
             const toolbarRects = ['export-btn', 'import-btn', 'new-pattern-btn'].map(id => {
-              const rect = document.getElementById(id).getBoundingClientRect();
-              return { id, y: rect.y, height: rect.height };
+              const button = document.getElementById(id);
+              const rect = button.getBoundingClientRect();
+              const style = getComputedStyle(button);
+              return { id, y: rect.y, width: rect.width, height: rect.height, display: style.display, padding: style.padding };
             });
             return {
               actionRects,
@@ -159,11 +175,12 @@ jobs:
             };
           });
 
+          console.log('CLOSED_METRICS=' + JSON.stringify(closedMetrics));
           assert.ok(closedMetrics.actionRects.length >= 3, 'expected card action buttons');
           const firstAction = closedMetrics.actionRects[0];
           closedMetrics.actionRects.forEach(rect => {
             assert.ok(Math.abs(rect.y - firstAction.y) <= 1, 'card actions must share one baseline');
-            assert.ok(Math.abs(rect.width - 32) <= 1 && Math.abs(rect.height - 32) <= 1, 'card actions must be 32x32');
+            assert.ok(Math.abs(rect.width - 32) <= 1 && Math.abs(rect.height - 32) <= 1, `card actions must be 32x32: ${rect.className} ${rect.width}x${rect.height}`);
           });
           assert.equal(closedMetrics.badgePosition, 'static');
           assert.ok(Math.abs(closedMetrics.titleCenter - closedMetrics.badgeCenter) <= 4, 'status badge must align with title');
@@ -194,10 +211,12 @@ jobs:
               fieldBackground: style.backgroundColor,
               fieldBorder: style.borderTopColor,
               fieldColor: style.color,
+              placeholder: getComputedStyle(field, '::placeholder').color,
               fieldTransition: getComputedStyle(document.getElementById('pattern-edit')).transitionDuration,
               gridColumns
             };
           });
+          console.log('OPEN_METRICS=' + JSON.stringify(openMetrics));
           assert.deepEqual(openMetrics.tabs, ['订阅设置', '匹配规则']);
           assert.notEqual(openMetrics.fieldBackground, openMetrics.fieldBorder);
           assert.notEqual(openMetrics.fieldBackground, openMetrics.fieldColor);
