@@ -1611,3 +1611,269 @@ body.ui-drawer-open {
 .app-content {
   transition: width 240ms cubic-bezier(.25, .1, .25, 1), margin 240ms cubic-bezier(.25, .1, .25, 1);
 }
+
+/* ui-dark-theme-polish-2026-08-26 */
+/* Keep the low-saturation blue-gray system, but bridge legacy Bootstrap/style.css
+ * tokens so dark mode does not leak the old brown palette. */
+:root,
+[data-theme="light"] {
+  --surface-canvas: var(--ui-bg);
+  --surface-raised: var(--ui-surface);
+  --surface-subtle: var(--ui-surface-soft);
+  --surface-hover: var(--ui-accent-soft);
+  --text-primary: var(--ui-text-strong);
+  --text-secondary: var(--ui-muted);
+  --border: var(--ui-border);
+  --accent: #607a93;
+  --accent-hover: #4f6982;
+  --accent-contrast: #f8fafb;
+  --navbar-background: var(--ui-surface);
+  --navbar-hover-background: var(--ui-accent-soft);
+  --navbar-active-background: var(--ui-accent-soft);
+  --navbar-foreground: var(--ui-text-strong);
+}
+
+[data-theme="dark"] {
+  --surface-canvas: var(--ui-bg);
+  --surface-raised: var(--ui-surface);
+  --surface-subtle: var(--ui-surface-soft);
+  --surface-hover: var(--ui-accent-soft);
+  --text-primary: var(--ui-text-strong);
+  --text-secondary: var(--ui-muted);
+  --border: var(--ui-border);
+  --accent: #7891a8;
+  --accent-hover: #91a8bb;
+  --accent-contrast: #11191f;
+  --navbar-background: var(--ui-surface);
+  --navbar-hover-background: var(--ui-accent-soft);
+  --navbar-active-background: var(--ui-accent-soft);
+  --navbar-foreground: var(--ui-text-strong);
+  --bs-body-bg: var(--ui-bg);
+  --bs-body-color: var(--ui-text);
+  --bs-emphasis-color: var(--ui-text-strong);
+  --bs-secondary-color: var(--ui-muted);
+  --bs-border-color: var(--ui-border);
+  --bs-secondary-bg: var(--ui-surface-soft);
+  --bs-tertiary-bg: var(--ui-surface-soft);
+}
+
+html[data-theme="dark"] {
+  --ui-bg: #161c21;
+  --ui-surface: #1e262c;
+  --ui-surface-soft: #232d34;
+  --ui-surface-selected: #29343d;
+  --ui-text: #dbe2e6;
+  --ui-text-strong: #f2f5f6;
+  --ui-muted: #aab6bd;
+  --ui-border: #3b4952;
+  --ui-border-strong: #53626c;
+  --ui-accent: #8da1b4;
+  --ui-accent-strong: #a3b4c3;
+  --ui-accent-soft: #2b3944;
+  --ui-success: #82a99c;
+  --ui-success-soft: #253a34;
+  --ui-warning: #b9a07d;
+  --ui-warning-soft: #3a3328;
+  --ui-danger: #bd8b89;
+  --ui-danger-soft: #3c2d2d;
+  --ui-neutral: #9aa5ac;
+  --ui-neutral-soft: #2b3338;
+  --ui-field-bg: #202a31;
+  --ui-field-border: #56656f;
+  --ui-field-border-hover: #72828d;
+  --ui-placeholder: #bac4ca;
+}
+
+/* Slightly larger poster while keeping the five-column density. */
+.pattern-card,
+.pattern-card[class*="pattern-card--"] {
+  grid-template-columns: 98px minmax(0, 1fr) !important;
+  min-height: 182px;
+}
+
+.pattern-card-poster {
+  width: 82px !important;
+  height: 116px !important;
+  margin: 12px 0 0 12px !important;
+}
+
+/* Bootstrap Icons have an optical baseline; center the search icon by box, not glyph baseline. */
+.search-control {
+  position: relative;
+  min-height: 42px;
+}
+
+.search-control > i {
+  position: absolute !important;
+  left: 13px !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 18px;
+  height: 18px;
+  margin-block: auto !important;
+  display: grid;
+  place-items: center;
+  translate: 0 !important;
+  transform: translateY(1px) !important;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.search-control > i::before {
+  display: block;
+  line-height: 1;
+}
+
+/* Theme toggle must use the same blue-gray interaction language in both themes. */
+#theme-toggle {
+  width: 36px;
+  height: 36px;
+  min-height: 36px !important;
+  padding: 0 !important;
+  display: inline-grid !important;
+  place-items: center;
+  border-radius: 10px !important;
+}
+
+html[data-theme="light"] #theme-toggle:hover,
+html[data-theme="dark"] #theme-toggle:hover {
+  color: var(--ui-accent-strong) !important;
+  background: var(--ui-accent-soft) !important;
+}
+
+html[data-theme="dark"] .app-navbar,
+html[data-theme="dark"] .app-shell,
+html[data-theme="dark"] #pattern-edit,
+html[data-theme="dark"] .editor-preview-card,
+html[data-theme="dark"] .ui-batch-toolbar-inner,
+html[data-theme="dark"] .ui-filter-chips,
+html[data-theme="dark"] .ui-stat-card,
+html[data-theme="dark"] #pattern-table-view {
+  background-color: var(--ui-surface) !important;
+  color: var(--ui-text) !important;
+  border-color: var(--ui-border) !important;
+}
+
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select,
+html[data-theme="dark"] .input-group-text,
+html[data-theme="dark"] textarea.form-control {
+  color: var(--ui-text) !important;
+  background: var(--ui-field-bg) !important;
+  border-color: var(--ui-field-border) !important;
+}
+
+html[data-theme="dark"] .form-control:hover,
+html[data-theme="dark"] .form-select:hover,
+html[data-theme="dark"] textarea.form-control:hover {
+  border-color: var(--ui-field-border-hover) !important;
+}
+
+html[data-theme="dark"] .form-control::placeholder,
+html[data-theme="dark"] textarea.form-control::placeholder {
+  color: var(--ui-placeholder) !important;
+  opacity: 1;
+}
+
+html[data-theme="dark"] .view-toggle .btn,
+html[data-theme="dark"] .pattern-toolbar-actions > .btn,
+html[data-theme="dark"] #batch-actions .btn,
+html[data-theme="dark"] .ui-preview-refresh,
+html[data-theme="dark"] .ui-page-btn,
+html[data-theme="dark"] .btn-outline-secondary,
+html[data-theme="dark"] .btn-outline-primary,
+html[data-theme="dark"] .btn-outline-success {
+  color: var(--ui-muted) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border-strong) !important;
+}
+
+html[data-theme="dark"] .view-toggle .btn:hover,
+html[data-theme="dark"] .pattern-toolbar-actions > .btn:hover,
+html[data-theme="dark"] #batch-actions .btn:hover,
+html[data-theme="dark"] .ui-preview-refresh:hover,
+html[data-theme="dark"] .ui-page-btn:hover,
+html[data-theme="dark"] .btn-outline-secondary:hover,
+html[data-theme="dark"] .btn-outline-primary:hover,
+html[data-theme="dark"] .btn-outline-success:hover {
+  color: var(--ui-text-strong) !important;
+  background: var(--ui-accent-soft) !important;
+  border-color: var(--ui-accent) !important;
+}
+
+html[data-theme="dark"] #new-pattern-btn,
+html[data-theme="dark"] .btn-primary {
+  color: #f5f8fa !important;
+  background: var(--ui-accent-strong) !important;
+  border-color: var(--ui-accent-strong) !important;
+}
+
+html[data-theme="dark"] #new-pattern-btn:hover,
+html[data-theme="dark"] .btn-primary:hover {
+  background: var(--ui-accent) !important;
+  border-color: var(--ui-accent) !important;
+}
+
+html[data-theme="dark"] .pattern-card-actions .btn {
+  color: #aebbc3 !important;
+  background: #202a31 !important;
+  border-color: #465660 !important;
+}
+
+html[data-theme="dark"] .pattern-card-actions .btn:hover {
+  color: #f2f5f6 !important;
+  background: #2b3944 !important;
+  border-color: #7891a8 !important;
+}
+
+html[data-theme="dark"] .pattern-card-language,
+html[data-theme="dark"] .pattern-card-meta .badge.bg-danger,
+html[data-theme="dark"] .pattern-card-meta .badge.text-bg-danger {
+  color: #ddb9b5 !important;
+  background: #3a2c2d !important;
+  border-color: #62494a !important;
+}
+
+html[data-theme="dark"] .pattern-card-quality,
+html[data-theme="dark"] .pattern-card-meta .badge.bg-primary,
+html[data-theme="dark"] .pattern-card-meta .badge.text-bg-primary {
+  color: #bfd0df !important;
+  background: #263846 !important;
+  border-color: #465e70 !important;
+}
+
+html[data-theme="dark"] .status-ok {
+  color: #a6cfbf !important;
+  background: #243a33 !important;
+  border-color: #45675b !important;
+}
+
+html[data-theme="dark"] .status-warning {
+  color: #d8bd95 !important;
+  background: #3c3327 !important;
+  border-color: #67583f !important;
+}
+
+html[data-theme="dark"] .status-error {
+  color: #dca8a5 !important;
+  background: #3e2d2e !important;
+  border-color: #68494b !important;
+}
+
+html[data-theme="dark"] .table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--ui-text);
+  --bs-table-border-color: var(--ui-border);
+  --bs-table-hover-bg: var(--ui-surface-soft);
+  --bs-table-hover-color: var(--ui-text-strong);
+}
+
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .modal-content,
+html[data-theme="dark"] .confirm-dialog,
+html[data-theme="dark"] .toast-item {
+  color: var(--ui-text) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+}
+
