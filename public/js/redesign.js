@@ -6,11 +6,14 @@
   const proto = window.MikanarrApp.prototype;
   const PAGE_SIZE = 12;
   const TAB_LABELS = [
-    ['source', '基础'],
-    ['matching', '匹配规则'],
-    ['mapping', 'Sonarr'],
-    ['output', '高级']
+    ['settings', '订阅设置'],
+    ['matching', '匹配规则']
   ];
+
+  const TAB_SECTIONS = {
+    settings: new Set(['source', 'mapping', 'output']),
+    matching: new Set(['matching'])
+  };
 
   function safeDate(value) {
     if (!value) return null;
@@ -367,8 +370,9 @@
   function applyEditorTab(sectionName) {
     const edit = document.getElementById('pattern-edit');
     if (!edit) return;
+    const visibleSections = TAB_SECTIONS[sectionName] || new Set([sectionName]);
     edit.querySelectorAll('.editor-section').forEach(section => {
-      section.classList.toggle('ui-tab-hidden', section.dataset.section !== sectionName);
+      section.classList.toggle('ui-tab-hidden', !visibleSections.has(section.dataset.section));
     });
     edit.querySelectorAll('.ui-editor-tab').forEach(tab => {
       const active = tab.dataset.section === sectionName;
@@ -376,6 +380,7 @@
       tab.setAttribute('aria-selected', String(active));
       tab.tabIndex = active ? 0 : -1;
     });
+    edit.querySelector('.editor-grid')?.scrollTo?.({ top: 0, behavior: 'smooth' });
   }
 
   function enhanceCard(card, pattern) {
@@ -385,6 +390,15 @@
     const status = card.querySelector('.pattern-card-status-badge');
     if (status?.textContent === '名称不一致') status.textContent = '待修复';
     if (status?.textContent === '未找到系列') status.textContent = '未匹配';
+
+    const body = card.querySelector('.pattern-card-body');
+    const title = card.querySelector('.pattern-card-title');
+    if (body && title && status && !body.querySelector('.ui-card-title-row')) {
+      const titleRow = document.createElement('div');
+      titleRow.className = 'ui-card-title-row';
+      title.before(titleRow);
+      titleRow.append(title, status);
+    }
 
     const details = document.createElement('div');
     details.className = 'ui-card-details';
@@ -480,15 +494,76 @@
 
     const title = document.getElementById('edit-title');
     if (title) title.textContent = pattern ? '编辑订阅' : '新建订阅';
-    applyEditorTab(pattern ? 'matching' : 'source');
+    const edit = document.getElementById('pattern-edit');
+    edit?.setAttribute('aria-hidden', 'false');
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (edit) {
+      edit.getAnimations?.().forEach(animation => animation.cancel());
+      edit.classList.add('is-open');
+      if (!reducedMotion && typeof edit.animate === 'function') {
+        const animation = edit.animate(
+          [
+            { transform: 'translateX(100%)', opacity: 0.96 },
+            { transform: 'translateX(0)', opacity: 1 }
+          ],
+          { duration: 260, easing: 'cubic-bezier(.2, .72, .22, 1)', fill: 'both' }
+        );
+        this.uiDrawerAnimation = animation;
+        animation.finished.then(() => {
+          if (this.uiDrawerAnimation === animation) this.uiDrawerAnimation = null;
+          animation.cancel();
+        }).catch(() => {});
+      }
+    }
+    applyEditorTab(pattern ? 'matching' : 'settings');
     return result;
   };
 
   const originalShowPatternList = proto.showPatternList;
   proto.showPatternList = function redesignedShowPatternList(...args) {
-    const result = originalShowPatternList.apply(this, args);
+    const edit = document.getElementById('pattern-edit');
+    const list = document.getElementById('pattern-list');
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const returnFocus = this.viewReturnFocus;
+
     document.body.classList.remove('ui-drawer-open');
-    return result;
+    if (this.uiDrawerAnimation) {
+      this.uiDrawerAnimation.cancel();
+      this.uiDrawerAnimation = null;
+    }
+    edit?.setAttribute('aria-hidden', 'true');
+    this.currentPatternId = null;
+    this.updatePageTitle('Patterns');
+    this.viewReturnFocus = null;
+
+    const finish = () => {
+      edit?.classList.add('d-none');
+      list?.classList.remove('d-none');
+      updateEditorContext(this, null);
+      if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus({ preventScroll: true });
+      else document.getElementById('search-input')?.focus({ preventScroll: true });
+    };
+
+    if (!edit || reducedMotion || typeof edit.animate !== 'function') {
+      edit?.classList.remove('is-open');
+      finish();
+      return;
+    }
+
+    const closingAnimation = edit.animate(
+      [
+        { transform: 'translateX(0)', opacity: 1 },
+        { transform: 'translateX(100%)', opacity: 0.96 }
+      ],
+      { duration: 220, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'both' }
+    );
+    this.uiDrawerAnimation = closingAnimation;
+    closingAnimation.finished.then(() => {
+      if (this.uiDrawerAnimation === closingAnimation) this.uiDrawerAnimation = null;
+      closingAnimation.cancel();
+      edit.classList.remove('is-open');
+      finish();
+    }).catch(() => {});
   };
 
   const originalCreatePatternCard = proto.createPatternCard;
