@@ -16,9 +16,11 @@ function contrast(a, b) {
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1672, height: 941 } });
+await page.emulateMedia({ reducedMotion: 'no-preference' });
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 await page.goto('http://127.0.0.1:12306/', { waitUntil: 'networkidle' });
+console.log('REDUCED_MOTION=' + await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
 await page.fill('#username', 'qa-admin');
 await page.fill('#password', 'qa-only-password');
 await page.click('#login-form button[type="submit"]');
