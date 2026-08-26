@@ -6,7 +6,7 @@ const { join } = require('node:path');
 test('UI polish keeps poster and search icon geometry intentional', () => {
   const css = readFileSync(join(__dirname, '../public/css/redesign.css'), 'utf8');
   assert.match(css, /ui-dark-theme-polish-2026-08-26/);
-  assert.match(css, /\.pattern-card-poster[\s\S]*width:\s*82px !important;[\s\S]*height:\s*116px !important;/);
+  assert.match(css, /\.pattern-card-poster[\s\S]*width:\s*86px !important;[\s\S]*height:\s*122px !important;/);
   assert.match(css, /\.search-control[\s\S]*min-height:\s*42px;[\s\S]*\.search-control > i[\s\S]*translate:\s*0 !important;[\s\S]*translateY\(1px\)/);
 });
 
@@ -16,6 +16,7 @@ test('dark theme overrides light-only card and button treatments', () => {
   assert.match(css, /html\[data-theme="dark"\] #theme-toggle:hover/);
   assert.match(css, /html\[data-theme="dark"\] \.pattern-card-language/);
   assert.match(css, /html\[data-theme="dark"\] \.pattern-card-quality/);
+  assert.match(css, /html\[data-theme="dark"\] \.pattern-card-season-badge[\s\S]*background:\s*#2b3944 !important;[\s\S]*border:\s*1px solid #60778a !important;/);
   assert.match(css, /--bs-table-bg:\s*transparent/);
   assert.match(css, /html\[data-theme="dark"\][\s\S]*--ui-bg:\s*#161c21/);
 });
