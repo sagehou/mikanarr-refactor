@@ -1,4 +1,5 @@
 name: Rendered UI polish QA
+# recheck: browser animation API
 
 on:
   push:
