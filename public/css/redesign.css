@@ -1687,13 +1687,13 @@ html[data-theme="dark"] {
 /* Slightly larger poster while keeping the five-column density. */
 .pattern-card,
 .pattern-card[class*="pattern-card--"] {
-  grid-template-columns: 98px minmax(0, 1fr) !important;
-  min-height: 182px;
+  grid-template-columns: 102px minmax(0, 1fr) !important;
+  min-height: 188px;
 }
 
 .pattern-card-poster {
-  width: 82px !important;
-  height: 116px !important;
+  width: 86px !important;
+  height: 122px !important;
   margin: 12px 0 0 12px !important;
 }
 
@@ -1840,6 +1840,12 @@ html[data-theme="dark"] .pattern-card-meta .badge.text-bg-primary {
   color: #bfd0df !important;
   background: #263846 !important;
   border-color: #465e70 !important;
+}
+
+html[data-theme="dark"] .pattern-card-season-badge {
+  color: #dbe7ef !important;
+  background: #2b3944 !important;
+  border: 1px solid #60778a !important;
 }
 
 html[data-theme="dark"] .status-ok {
