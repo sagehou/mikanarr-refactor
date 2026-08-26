@@ -15,6 +15,265 @@
     matching: new Set(['matching'])
   };
 
+  const UI_TUNING_STYLE_ID = 'ui-density-preview-tuning';
+  const UI_TUNING_CSS = `
+    :root,
+    [data-theme="light"] {
+      --ui-bg: #f3f6f8;
+      --ui-surface: #ffffff;
+      --ui-surface-soft: #f7f9fb;
+      --ui-surface-selected: #edf3f7;
+      --ui-text: #34424d;
+      --ui-text-strong: #172630;
+      --ui-muted: #5d6e79;
+      --ui-border: #d2dce2;
+      --ui-border-strong: #b9c7d0;
+      --ui-accent: #607a93;
+      --ui-accent-strong: #4f6982;
+      --ui-accent-soft: #e6edf3;
+      --ui-success: #4f7f6e;
+      --ui-success-soft: #e4f0eb;
+      --ui-warning: #8d6e43;
+      --ui-warning-soft: #f3eadc;
+      --ui-danger: #95615e;
+      --ui-danger-soft: #f3e6e5;
+      --ui-neutral: #687985;
+      --ui-neutral-soft: #edf1f4;
+      --ui-field-bg: #ffffff;
+      --ui-field-border: #b8c5ce;
+      --ui-field-border-hover: #98aab5;
+      --ui-placeholder: #657681;
+    }
+
+    [data-theme="dark"] {
+      --ui-muted: #aab6bd;
+      --ui-border: #3b4952;
+      --ui-border-strong: #53626c;
+      --ui-field-bg: #202a31;
+      --ui-field-border: #56656f;
+      --ui-field-border-hover: #72828d;
+      --ui-placeholder: #bac4ca;
+    }
+
+    .app-navbar .nav-link.active {
+      color: var(--ui-accent-strong) !important;
+      background: var(--ui-accent-soft) !important;
+      border-radius: 8px;
+    }
+
+    .app-navbar #logout-btn {
+      color: var(--ui-text) !important;
+      border-color: var(--ui-border-strong) !important;
+      background: var(--ui-surface) !important;
+    }
+
+    .pattern-page-heading .page-lead,
+    .pattern-card-title-zh,
+    .ui-card-details,
+    .ui-card-detail i,
+    #pattern-form .form-text,
+    .editor-section-heading p,
+    .ui-editor-context-meta,
+    .ui-pagination-meta {
+      color: var(--ui-muted) !important;
+    }
+
+    .pattern-card-language,
+    .pattern-card-meta .badge.bg-danger,
+    .pattern-card-meta .badge.text-bg-danger {
+      color: #704d49 !important;
+      background: #f1e6e4 !important;
+      border-color: #dcc5c1 !important;
+    }
+
+    .pattern-card-quality,
+    .pattern-card-meta .badge.bg-primary,
+    .pattern-card-meta .badge.text-bg-primary {
+      color: #4a637c !important;
+      background: #e5ecf3 !important;
+      border-color: #c8d5e0 !important;
+    }
+
+    .pattern-card-meta .badge {
+      opacity: 1 !important;
+    }
+
+    .status-ok {
+      color: #3f715f !important;
+      background: #e4f0eb !important;
+      border-color: #c5ddd3 !important;
+    }
+
+    .status-warning {
+      color: #7b5c32 !important;
+      background: #f4eadb !important;
+      border-color: #e0cfb5 !important;
+    }
+
+    .status-error {
+      color: #854f4c !important;
+      background: #f4e6e5 !important;
+      border-color: #dfc3c0 !important;
+    }
+
+    .pattern-card-actions .btn {
+      color: #566873 !important;
+      border-color: #c1cdd5 !important;
+      background: #ffffff !important;
+    }
+
+    .pattern-card-actions .btn:hover {
+      color: var(--ui-text-strong) !important;
+      border-color: #9fb0bb !important;
+      background: #f4f7f9 !important;
+    }
+
+    #pattern-card-view.d-none,
+    .pattern-card-grid.d-none,
+    #pattern-table-view.d-none {
+      display: none !important;
+    }
+
+    .pattern-card-grid:not(.d-none) {
+      display: grid !important;
+    }
+
+    .ui-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .ui-preview-header h2 {
+      min-width: 0;
+      margin: 0;
+    }
+
+    .ui-preview-refresh {
+      min-height: 30px !important;
+      padding: 4px 9px !important;
+      display: inline-flex !important;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--ui-field-border) !important;
+      border-radius: 8px !important;
+      color: var(--ui-text) !important;
+      background: var(--ui-surface) !important;
+      font-size: 0.7rem !important;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .ui-preview-refresh:hover:not(:disabled) {
+      border-color: var(--ui-field-border-hover) !important;
+      background: var(--ui-surface-soft) !important;
+    }
+
+    .ui-preview-refresh:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .ui-preview-source {
+      min-width: 0;
+      margin: -1px 0 9px;
+      padding: 7px 9px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--ui-border);
+      border-radius: 8px;
+      color: var(--ui-muted);
+      background: var(--ui-surface-soft);
+      font-size: 0.67rem;
+    }
+
+    .ui-preview-source > i {
+      flex: 0 0 auto;
+      color: var(--ui-accent-strong);
+    }
+
+    .ui-preview-source-value {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (min-width: 1500px) {
+      .app-content {
+        width: min(1860px, calc(100% - 40px)) !important;
+      }
+
+      .pattern-card-grid:not(.d-none) {
+        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+      }
+
+      body.ui-drawer-open .app-content {
+        width: calc(100vw - min(500px, 40vw) - 30px) !important;
+        margin-left: 15px !important;
+        margin-right: auto !important;
+      }
+
+      body.ui-drawer-open .pattern-card-grid:not(.d-none) {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      }
+    }
+
+    @media (min-width: 1181px) and (max-width: 1499px) {
+      .app-content {
+        width: calc(100% - 32px) !important;
+      }
+
+      .pattern-card-grid:not(.d-none) {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      }
+
+      body.ui-drawer-open .pattern-card-grid:not(.d-none) {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      }
+    }
+  `;
+
+  function injectUiTuningStyles() {
+    if (document.getElementById(UI_TUNING_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = UI_TUNING_STYLE_ID;
+    style.textContent = UI_TUNING_CSS;
+    document.head.appendChild(style);
+  }
+
+  function remoteRssValue() {
+    return document.getElementById('remote')?.value?.trim() || '';
+  }
+
+  function setPreviewRefreshBusy(busy) {
+    const button = document.getElementById('ui-preview-refresh-btn');
+    if (!button) return;
+    button.disabled = busy || !remoteRssValue();
+    button.innerHTML = busy
+      ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>刷新中</span>'
+      : '<i class="bi bi-arrow-clockwise" aria-hidden="true"></i><span>刷新 RSS</span>';
+  }
+
+  function syncPreviewSource(app = window.mikanarrApp) {
+    const remote = remoteRssValue();
+    const source = document.querySelector('.ui-preview-source-value');
+    if (source) {
+      source.textContent = remote || '尚未设置 Remote RSS URL';
+      source.title = remote;
+    }
+    const button = document.getElementById('ui-preview-refresh-btn');
+    if (button) button.disabled = Boolean(app?.uiPreviewLoading) || !remote;
+
+    const preview = document.getElementById('rss-preview');
+    if (!remote && preview && !preview.querySelector('.rss-item')) {
+      preview.innerHTML = '<p class="text-muted text-center mb-0">请先在“订阅设置”填写 Remote RSS URL</p>';
+    }
+  }
+
   function safeDate(value) {
     if (!value) return null;
     const date = new Date(value);
@@ -295,7 +554,6 @@
     field.appendChild(help);
   }
 
-
   function buildEditorContext() {
     const edit = document.getElementById('pattern-edit');
     const heading = edit?.querySelector('.editor-heading');
@@ -360,8 +618,37 @@
     const preview = edit.querySelector('.editor-preview-panel');
     if (matching && preview) {
       matching.appendChild(preview);
-      const heading = preview.querySelector('.card-header h2');
+      const cardHeader = preview.querySelector('.card-header');
+      const heading = cardHeader?.querySelector('h2');
       if (heading) heading.innerHTML = '<i class="bi bi-stars" aria-hidden="true"></i> 实时预览';
+      if (cardHeader && !cardHeader.querySelector('#ui-preview-refresh-btn')) {
+        cardHeader.classList.add('ui-preview-header');
+        const refresh = document.createElement('button');
+        refresh.type = 'button';
+        refresh.id = 'ui-preview-refresh-btn';
+        refresh.className = 'btn btn-sm ui-preview-refresh';
+        refresh.innerHTML = '<i class="bi bi-arrow-clockwise" aria-hidden="true"></i><span>刷新 RSS</span>';
+        refresh.addEventListener('click', async () => {
+          const app = window.mikanarrApp;
+          if (!app) return;
+          if (!remoteRssValue()) {
+            window.MikanarrUi?.Toast?.info?.('请先填写 Remote RSS URL');
+            syncPreviewSource(app);
+            return;
+          }
+          await app.loadRssPreview();
+        });
+        cardHeader.appendChild(refresh);
+      }
+
+      const body = preview.querySelector('.card-body');
+      if (body && !body.querySelector('.ui-preview-source')) {
+        const source = document.createElement('div');
+        source.className = 'ui-preview-source';
+        source.innerHTML = '<i class="bi bi-rss" aria-hidden="true"></i><span class="ui-preview-source-value"></span>';
+        body.prepend(source);
+      }
+      syncPreviewSource(window.mikanarrApp);
     }
 
     buildPatternHelp();
@@ -381,6 +668,17 @@
       tab.tabIndex = active ? 0 : -1;
     });
     edit.querySelector('.editor-grid')?.scrollTo?.({ top: 0, behavior: 'smooth' });
+
+    if (sectionName === 'matching') {
+      const app = window.mikanarrApp;
+      const remote = remoteRssValue();
+      syncPreviewSource(app);
+      if (app && remote && !app.uiPreviewLoading && app.uiPreviewRemote !== remote) {
+        Promise.resolve(app.loadRssPreview()).catch(error => {
+          console.warn('[matching-preview] Failed to refresh RSS preview:', error);
+        });
+      }
+    }
   }
 
   function enhanceCard(card, pattern) {
@@ -424,6 +722,8 @@
   }
 
   function enhanceStaticUi() {
+    injectUiTuningStyles();
+
     const navLabel = document.querySelector('.app-navbar .nav-link.active');
     if (navLabel) navLabel.textContent = '订阅管理';
 
@@ -461,12 +761,13 @@
     buildEditorTabs();
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme && document.documentElement.dataset.theme !== 'dark') metaTheme.content = '#657c93';
+    if (metaTheme && document.documentElement.dataset.theme !== 'dark') metaTheme.content = '#607a93';
 
     const app = window.mikanarrApp;
     if (app) {
       app.updatePatternSummary();
       app.updateBatchUI();
+      syncPreviewSource(app);
     }
   }
 
@@ -480,8 +781,24 @@
   const originalApplyTheme = proto.applyTheme;
   proto.applyTheme = function redesignedApplyTheme(theme) {
     const result = originalApplyTheme.call(this, theme);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1e262c' : '#657c93');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1e262c' : '#607a93');
     return result;
+  };
+
+  const originalLoadRssPreview = proto.loadRssPreview;
+  proto.loadRssPreview = async function redesignedLoadRssPreview(...args) {
+    const remote = remoteRssValue();
+    this.uiPreviewLoading = true;
+    setPreviewRefreshBusy(true);
+    syncPreviewSource(this);
+    try {
+      return await originalLoadRssPreview.apply(this, args);
+    } finally {
+      this.uiPreviewLoading = false;
+      this.uiPreviewRemote = remote;
+      setPreviewRefreshBusy(false);
+      syncPreviewSource(this);
+    }
   };
 
   const originalShowPatternEdit = proto.showPatternEdit;
@@ -515,6 +832,7 @@
         }).catch(() => {});
       }
     }
+    this.uiPreviewRemote = null;
     applyEditorTab(pattern ? 'matching' : 'settings');
     return result;
   };
@@ -627,7 +945,6 @@
     return result;
   };
 
-
   const originalRenderRssPreview = proto.renderRssPreview;
   proto.renderRssPreview = function redesignedRenderRssPreview(...args) {
     const result = originalRenderRssPreview.apply(this, args);
@@ -650,6 +967,7 @@
       row.classList.add('ui-rss-result');
       row.replaceChildren(titleNode, resultNode);
     });
+    syncPreviewSource(this);
     return result;
   };
 
@@ -722,6 +1040,7 @@
     document.getElementById('batch-update-btn')?.addEventListener('click', () => window.mikanarrApp?.batchUpdateSelection());
     document.getElementById('batch-copy-btn')?.addEventListener('click', () => window.mikanarrApp?.batchCopyLinks());
     document.getElementById('batch-clear-btn')?.addEventListener('click', () => window.mikanarrApp?.clearBatchSelection());
+    document.getElementById('remote')?.addEventListener('input', () => syncPreviewSource(window.mikanarrApp));
 
     document.getElementById('pattern-card-view')?.addEventListener('change', event => {
       if (event.target.classList.contains('card-checkbox')) window.mikanarrApp?.updateBatchUI();
