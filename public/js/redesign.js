@@ -496,9 +496,14 @@
     if (title) title.textContent = pattern ? '编辑订阅' : '新建订阅';
     const edit = document.getElementById('pattern-edit');
     edit?.classList.remove('is-open');
-    void edit?.offsetWidth;
-    edit?.classList.add('is-open');
     edit?.setAttribute('aria-hidden', 'false');
+    if (this.uiDrawerOpenFrame) window.cancelAnimationFrame(this.uiDrawerOpenFrame);
+    this.uiDrawerOpenFrame = window.requestAnimationFrame(() => {
+      this.uiDrawerOpenFrame = window.requestAnimationFrame(() => {
+        this.uiDrawerOpenFrame = null;
+        edit?.classList.add('is-open');
+      });
+    });
     applyEditorTab(pattern ? 'matching' : 'settings');
     return result;
   };
@@ -511,6 +516,10 @@
     const returnFocus = this.viewReturnFocus;
 
     document.body.classList.remove('ui-drawer-open');
+    if (this.uiDrawerOpenFrame) {
+      window.cancelAnimationFrame(this.uiDrawerOpenFrame);
+      this.uiDrawerOpenFrame = null;
+    }
     edit?.classList.remove('is-open');
     edit?.setAttribute('aria-hidden', 'true');
     this.currentPatternId = null;
@@ -530,7 +539,7 @@
       return;
     }
 
-    window.setTimeout(finish, 230);
+    window.setTimeout(finish, 250);
   };
 
   const originalCreatePatternCard = proto.createPatternCard;

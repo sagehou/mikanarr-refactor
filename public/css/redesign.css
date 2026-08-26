@@ -1593,3 +1593,21 @@ body.ui-drawer-open {
   padding: 0 !important;
   line-height: 1 !important;
 }
+
+
+/* UI polish v2.2: deliberate drawer motion. */
+#pattern-edit.pattern-edit {
+  transition:
+    transform 240ms cubic-bezier(.25, .1, .25, 1),
+    opacity 200ms ease,
+    visibility 0s linear 240ms;
+}
+#pattern-edit.pattern-edit.is-open {
+  transition:
+    transform 240ms cubic-bezier(.25, .1, .25, 1),
+    opacity 200ms ease,
+    visibility 0s linear 0s;
+}
+.app-content {
+  transition: width 240ms cubic-bezier(.25, .1, .25, 1), margin 240ms cubic-bezier(.25, .1, .25, 1);
+}
