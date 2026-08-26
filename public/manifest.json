@@ -3,11 +3,11 @@
   "short_name": "Mikanarr",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#fdfbf7",
-  "theme_color": "#b07d62",
+  "background_color": "#f3f6f8",
+  "theme_color": "#607a93",
   "icons": [
     {
-      "src": "/images/icon.svg",
+      "src": "/images/icon.svg?v=3",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml"
     }

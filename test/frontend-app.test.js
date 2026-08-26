@@ -24,7 +24,7 @@ test('refined application shell preserves semantic login and navigation structur
   assert.ok(document.querySelector('nav').classList.contains('app-navbar'));
   assert.ok(document.querySelector('#main-container > .app-content'));
   assert.equal(document.querySelector('#oidc-login-container > .login-divider').textContent.trim(), '或');
-  assert.equal(document.querySelector('meta[name="theme-color"]').content, '#a86f4c');
+  assert.equal(document.querySelector('meta[name="theme-color"]').content, '#607a93');
   dom.window.close();
 });
 
