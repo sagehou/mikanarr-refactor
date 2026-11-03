@@ -37,7 +37,15 @@ test('production dependency floors and supported majors stay patched', () => {
 
   assertVersionRange(manifest.dependencies.axios, [1, 18, 1], [2, 0, 0]);
   const betterSqliteVersion = assertVersionRange(manifest.dependencies['better-sqlite3'], [13, 0, 3], [14, 0, 0]);
-  assertVersionRange(manifest.dependencies.dotenv, [17, 4, 2], [18, 0, 0]);
+  assertVersionRange(manifest.dependencies.dotenv, [17, 4, 2], [19, 0, 0]);
+  const overrides = manifest.overrides || {};
+  assertVersionRange(overrides['body-parser'], [2, 4, 0], [3, 0, 0]);
+  assertVersionRange(overrides['brace-expansion'], [5, 0, 12], [6, 0, 0]);
+  assertVersionRange(overrides['follow-redirects'], [1, 16, 1], [2, 0, 0]);
+  assertVersionRange(overrides['proxy-addr'], [2, 0, 8], [3, 0, 0]);
+  assertVersionRange(overrides.qs, [6, 16, 1], [7, 0, 0]);
+  assertVersionRange(overrides['source-map-js'], [1, 2, 2], [2, 0, 0]);
+  assertVersionRange(overrides.undici, [8, 12, 2], [9, 0, 0]);
   assertVersionRange(manifest.dependencies['http-proxy-middleware'], [4, 2, 0], [5, 0, 0]);
   const sonarrRoute = read('server/routes/sonarr.js');
   assert.doesNotMatch(sonarrRoute, /require\(['\"]http-proxy-middleware['\"]\)/);

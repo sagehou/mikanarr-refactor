@@ -1,0 +1,44 @@
+name: Refresh dependency lockfile
+
+on:
+  push:
+    branches:
+      - chore/deps-maintenance-2026-11
+    paths:
+      - package.json
+      - .github/workflows/refresh-dependency-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+
+      - name: Pin npm
+        run: npm install --global --ignore-scripts npm@11.18.0 && test "$(npm --version)" = "11.18.0"
+
+      - name: Regenerate package lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Commit package lock
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "No package-lock changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore(deps): regenerate lockfile with patched transitive dependencies"
+          git push
