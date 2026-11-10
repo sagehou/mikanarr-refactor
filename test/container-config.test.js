@@ -53,7 +53,7 @@ test('production dependency floors and supported majors stay patched', () => {
   assertVersionRange(manifest.dependencies['openid-client'], [6, 8, 4], [7, 0, 0]);
   assert.equal(manifest.dependencies.safeRegex2, undefined);
   assertVersionRange(manifest.dependencies['safe-regex2'], [5, 1, 1], [6, 0, 0]);
-  assertVersionRange(manifest.devDependencies.jsdom, [29, 1, 1], [31, 0, 0]);
+  assertVersionRange(manifest.devDependencies.jsdom, [29, 1, 1], [32, 0, 0]);
   assertVersionRange(manifest.devDependencies.yaml, [2, 9, 0], [3, 0, 0]);
   assert.equal(manifest.dependencies.cors, undefined);
 
