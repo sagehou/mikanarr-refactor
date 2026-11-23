@@ -42,6 +42,9 @@ test('production dependency floors and supported majors stay patched', () => {
   assertVersionRange(overrides['body-parser'], [2, 4, 0], [3, 0, 0]);
   assertVersionRange(overrides['brace-expansion'], [5, 0, 12], [6, 0, 0]);
   assertVersionRange(overrides['follow-redirects'], [1, 16, 1], [2, 0, 0]);
+  assertVersionRange(overrides.minimatch, [11, 0, 1], [12, 0, 0]);
+  const lock = JSON.parse(read('package-lock.json'));
+  assertVersionRange(lock.packages['node_modules/minimatch'].version, [11, 0, 1], [12, 0, 0]);
   assertVersionRange(overrides['proxy-addr'], [2, 0, 8], [3, 0, 0]);
   assertVersionRange(overrides.qs, [6, 16, 1], [7, 0, 0]);
   assertVersionRange(overrides['source-map-js'], [1, 2, 2], [2, 0, 0]);
